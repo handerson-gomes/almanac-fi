@@ -3,6 +3,8 @@ import { describe, expect, test } from "vitest";
 import {
   addMoney,
   basisPointsSchema,
+  detectTransferCandidates,
+  excludeConfirmedTransfers,
   isoDateSchema,
   money,
   moneySchema,
@@ -62,5 +64,52 @@ describe("financial primitives", () => {
       currency: "EUR",
     });
     expect(isoDateSchema.parse("2026-07-12")).toBe("2026-07-12");
+  });
+});
+
+describe("transfer matching", () => {
+  const transaction = (
+    id: string,
+    accountId: string,
+    amountMinor: number,
+    transactionDate = "2026-07-10T00:00:00.000Z",
+  ) => ({ accountId, amountMinor, currency: "USD", id, transactionDate });
+
+  test("distinguishes exact, partial, ambiguous, and same-account reversals", () => {
+    expect(
+      detectTransferCandidates([
+        transaction("out", "checking", -10_000),
+        transaction("in", "savings", 10_000, "2026-07-11T00:00:00.000Z"),
+      ]),
+    ).toEqual([expect.objectContaining({ confidence: 1, reason: "exact" })]);
+    expect(
+      detectTransferCandidates([
+        transaction("out", "checking", -10_000),
+        transaction("in", "savings", 9_950),
+      ])[0],
+    ).toMatchObject({ confidence: 0.7, reason: "partial" });
+    expect(
+      detectTransferCandidates([
+        transaction("out", "checking", -10_000),
+        transaction("in-1", "savings", 10_000),
+        transaction("in-2", "brokerage", 10_000),
+      ]),
+    ).toEqual([
+      expect.objectContaining({ reason: "ambiguous" }),
+      expect.objectContaining({ reason: "ambiguous" }),
+    ]);
+    expect(
+      detectTransferCandidates([
+        transaction("charge", "checking", -10_000),
+        transaction("reversal", "checking", 10_000),
+      ]),
+    ).toEqual([]);
+  });
+
+  test("excludes only explicitly confirmed transaction ids", () => {
+    const items = [{ id: "transfer" }, { id: "spend" }];
+    expect(excludeConfirmedTransfers(items, new Set(["transfer"]))).toEqual([
+      { id: "spend" },
+    ]);
   });
 });

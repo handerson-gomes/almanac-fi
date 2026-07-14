@@ -248,4 +248,75 @@ describe("SQLite foundation", () => {
     ).toEqual([...dates]);
     database.close();
   });
+
+  test("persists reversible and audited transfer decisions", () => {
+    const database = createDatabase();
+    database.migrate();
+    const unitOfWork = createUnitOfWork(database);
+    const accounts = ["Checking", "Savings"].map((name) =>
+      unitOfWork.accounts.create({
+        accountType: "checking",
+        connectionId: null,
+        currency: "USD",
+        externalId: null,
+        name,
+        status: "active",
+      }),
+    );
+    const batch = unitOfWork.importBatches.create({
+      actor: "user",
+      checksum: "transfer-batch",
+      source: "manual",
+    });
+    [-25_000, 25_000].forEach((amountMinor, index) => {
+      const source = unitOfWork.sourceRecords.create({
+        batchId: batch.id,
+        checksum: `transfer-source-${index}`,
+        rawPayload: "{}",
+        sourceType: "manual",
+      });
+      unitOfWork.transactions.create({
+        accountId: accounts[index]?.id ?? "",
+        amountMinor,
+        categoryId: null,
+        currency: "USD",
+        merchant: "Online transfer",
+        payee: null,
+        postedAt: null,
+        sourceCategory: null,
+        sourceIdentity: `manual:transfer-${index}`,
+        sourceRecordId: source.id,
+        status: "posted",
+        transactionDate: `2026-07-${10 + index}T00:00:00.000Z`,
+      });
+    });
+
+    const candidate = unitOfWork.transferMatches.refreshCandidates()[0];
+    expect(candidate).toMatchObject({ reason: "exact", status: "candidate" });
+    const confirmed = unitOfWork.transferMatches.decide(
+      candidate?.id ?? "",
+      "confirm",
+      "user",
+    );
+    expect(confirmed?.status).toBe("confirmed");
+    expect(unitOfWork.transferMatches.confirmedTransactionIds()).toEqual(
+      new Set([
+        confirmed?.outboundTransactionId,
+        confirmed?.inboundTransactionId,
+      ]),
+    );
+    expect(
+      unitOfWork.auditEvents
+        .list()
+        .items.some(
+          (event) =>
+            event.entityId === confirmed?.id && event.operation === "confirm",
+        ),
+    ).toBe(true);
+    expect(
+      unitOfWork.transferMatches.decide(confirmed?.id ?? "", "unmatch", "user")
+        ?.status,
+    ).toBe("candidate");
+    database.close();
+  });
 });

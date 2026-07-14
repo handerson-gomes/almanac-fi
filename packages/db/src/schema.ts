@@ -1,6 +1,7 @@
 import {
   type AnySQLiteColumn,
   integer,
+  real,
   sqliteTable,
   text,
 } from "drizzle-orm/sqlite-core";
@@ -162,6 +163,25 @@ export const transactionSplits = sqliteTable("transaction_splits", {
   transactionId: text("transaction_id")
     .notNull()
     .references(() => transactions.id, { onDelete: "cascade" }),
+});
+
+export const transferMatches = sqliteTable("transfer_matches", {
+  confidence: real("confidence").notNull(),
+  createdAt: text("created_at").notNull(),
+  decidedAt: text("decided_at"),
+  decidedBy: text("decided_by"),
+  id: text("id").primaryKey(),
+  inboundTransactionId: text("inbound_transaction_id")
+    .notNull()
+    .references(() => transactions.id),
+  outboundTransactionId: text("outbound_transaction_id")
+    .notNull()
+    .references(() => transactions.id),
+  reason: text("reason", { enum: ["ambiguous", "exact", "partial"] }).notNull(),
+  status: text("status", {
+    enum: ["candidate", "confirmed", "rejected"],
+  }).notNull(),
+  updatedAt: text("updated_at").notNull(),
 });
 
 export const csvMappings = sqliteTable("csv_mappings", {

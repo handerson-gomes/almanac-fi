@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { detectTransferCandidates } from "@almanac-fi/core";
+
 import type { AppDatabase } from "./index.js";
 import { now } from "./index.js";
 
@@ -154,6 +156,18 @@ export type TransactionSplitInput = Readonly<{
   categoryId: string | null;
   memo: string | null;
 }>;
+export type TransferMatch = Readonly<{
+  confidence: number;
+  createdAt: string;
+  decidedAt: string | null;
+  decidedBy: string | null;
+  id: string;
+  inboundTransactionId: string;
+  outboundTransactionId: string;
+  reason: "ambiguous" | "exact" | "partial";
+  status: "candidate" | "confirmed" | "rejected";
+  updatedAt: string;
+}>;
 type CategorizationRuleUpdate = {
   [
     Key in
@@ -291,6 +305,18 @@ export interface CsvMappingRepository {
   ): CsvMapping | undefined;
 }
 
+export interface TransferMatchRepository {
+  confirmedTransactionIds(): ReadonlySet<string>;
+  decide(
+    id: string,
+    decision: "confirm" | "reject" | "unmatch",
+    actor: string,
+  ): TransferMatch | undefined;
+  findById(id: string): TransferMatch | undefined;
+  list(status?: TransferMatch["status"]): readonly TransferMatch[];
+  refreshCandidates(): readonly TransferMatch[];
+}
+
 export interface UnitOfWork {
   readonly accounts: AccountRepository;
   readonly auditEvents: AuditEventRepository;
@@ -301,6 +327,7 @@ export interface UnitOfWork {
   readonly institutionConnections: InstitutionConnectionRepository;
   readonly sourceRecords: SourceRecordRepository;
   readonly transactions: TransactionRepository;
+  readonly transferMatches: TransferMatchRepository;
 }
 
 function pageSize(request: PageRequest = {}): number {
@@ -1075,6 +1102,88 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
       return nextCursor ? { items, nextCursor } : { items };
     },
   };
+  function transferRecord(id: string): TransferMatch | undefined {
+    return database.sqlite
+      .prepare(
+        "SELECT id, outbound_transaction_id AS outboundTransactionId, inbound_transaction_id AS inboundTransactionId, status, reason, confidence, created_at AS createdAt, updated_at AS updatedAt, decided_at AS decidedAt, decided_by AS decidedBy FROM transfer_matches WHERE id = ?",
+      )
+      .get(id) as TransferMatch | undefined;
+  }
+  const transferMatches: TransferMatchRepository = {
+    confirmedTransactionIds() {
+      const rows = database.sqlite
+        .prepare(
+          "SELECT outbound_transaction_id AS outboundId, inbound_transaction_id AS inboundId FROM transfer_matches WHERE status = 'confirmed'",
+        )
+        .all() as ReadonlyArray<{ inboundId: string; outboundId: string }>;
+      return new Set(rows.flatMap((row) => [row.outboundId, row.inboundId]));
+    },
+    decide(id, decision, actor) {
+      const current = transferRecord(id);
+      if (!current) return undefined;
+      if (decision === "unmatch" && current.status !== "confirmed") {
+        throw new Error("Only a confirmed transfer can be unmatched.");
+      }
+      if (decision === "confirm" && current.status === "rejected") {
+        throw new Error(
+          "A rejected candidate must be restored before confirmation.",
+        );
+      }
+      const status =
+        decision === "confirm"
+          ? "confirmed"
+          : decision === "reject"
+            ? "rejected"
+            : "candidate";
+      const timestamp = now();
+      database.sqlite
+        .prepare(
+          "UPDATE transfer_matches SET status = ?, decided_at = ?, decided_by = ?, updated_at = ? WHERE id = ?",
+        )
+        .run(status, timestamp, actor, timestamp, id);
+      const updated = transferRecord(id);
+      auditEvents.append({
+        actor,
+        afterJson: JSON.stringify(updated),
+        beforeJson: JSON.stringify(current),
+        entityId: id,
+        entityType: "transfer_match",
+        operation: decision,
+        sourceRecordId: null,
+      });
+      return updated;
+    },
+    findById: transferRecord,
+    list(status) {
+      return database.sqlite
+        .prepare(
+          `SELECT id, outbound_transaction_id AS outboundTransactionId, inbound_transaction_id AS inboundTransactionId, status, reason, confidence, created_at AS createdAt, updated_at AS updatedAt, decided_at AS decidedAt, decided_by AS decidedBy FROM transfer_matches ${status === undefined ? "" : "WHERE status = ?"} ORDER BY created_at, id`,
+        )
+        .all(...(status === undefined ? [] : [status])) as TransferMatch[];
+    },
+    refreshCandidates() {
+      const detected = detectTransferCandidates(
+        transactions.list({}, { limit: 100 }).items,
+      );
+      for (const candidate of detected) {
+        const timestamp = now();
+        database.sqlite
+          .prepare(
+            "INSERT INTO transfer_matches (id, outbound_transaction_id, inbound_transaction_id, status, reason, confidence, created_at, updated_at) VALUES (?, ?, ?, 'candidate', ?, ?, ?, ?) ON CONFLICT(outbound_transaction_id, inbound_transaction_id) DO UPDATE SET reason = excluded.reason, confidence = excluded.confidence, updated_at = excluded.updated_at WHERE transfer_matches.status = 'candidate'",
+          )
+          .run(
+            randomUUID(),
+            candidate.outboundTransactionId,
+            candidate.inboundTransactionId,
+            candidate.reason,
+            candidate.confidence,
+            timestamp,
+            timestamp,
+          );
+      }
+      return transferMatches.list("candidate");
+    },
+  };
   return Object.freeze({
     accounts,
     auditEvents,
@@ -1085,6 +1194,7 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
     institutionConnections,
     sourceRecords,
     transactions,
+    transferMatches,
   });
 }
 

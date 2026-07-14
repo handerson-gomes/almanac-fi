@@ -38,6 +38,11 @@ import {
   transactionDetailsSchema,
   transactionFilterSchema,
   transactionListSchema,
+  transferMatchDecisionSchema,
+  transferMatchListSchema,
+  transferMatchSchema,
+  transferMatchStatusSchema,
+  transferReportingSummarySchema,
   updateAccountSchema,
   updateCategorizationRuleSchema,
   updateCategorySchema,
@@ -377,6 +382,46 @@ export async function createServer(
     if (!details) notFound("The transaction does not exist.");
     return transactionDetailsSchema.parse(details);
   });
+  app.post("/transfer-matches/detect", async () =>
+    transferMatchListSchema.parse({
+      items: unitOfWork.transferMatches.refreshCandidates(),
+    }),
+  );
+  app.get("/transfer-matches", async (request) => {
+    const status = parseRequest(
+      transferMatchStatusSchema.optional(),
+      (request.query as { status?: unknown }).status,
+    );
+    return transferMatchListSchema.parse({
+      items: unitOfWork.transferMatches.list(status),
+    });
+  });
+  app.post("/transfer-matches/:id/decision", async (request) => {
+    const id = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const input = parseRequest(transferMatchDecisionSchema, request.body);
+    try {
+      const match = unitOfWork.transferMatches.decide(
+        id,
+        input.decision,
+        input.actor,
+      );
+      if (!match) notFound("The transfer match does not exist.");
+      return transferMatchSchema.parse(match);
+    } catch (error) {
+      if (error instanceof Error) badRequest(error.message);
+      throw error;
+    }
+  });
+  app.get("/reporting/transfer-exclusions", async () =>
+    transferReportingSummarySchema.parse({
+      excludedTransactionIds: [
+        ...unitOfWork.transferMatches.confirmedTransactionIds(),
+      ],
+    }),
+  );
   app.post("/csv-imports/preview", async (request) => {
     const input = parseRequest(csvPreviewRequestSchema, request.body);
     if (!unitOfWork.accounts.findById(input.accountId))

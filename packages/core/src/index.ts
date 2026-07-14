@@ -83,3 +83,92 @@ export function serializeMoney(
 }
 
 export const corePackageName = "@almanac-fi/core" as const;
+
+export type TransferTransaction = Readonly<{
+  accountId: string;
+  amountMinor: number;
+  currency: string;
+  id: string;
+  transactionDate: string;
+}>;
+
+export type TransferCandidate = Readonly<{
+  confidence: number;
+  inboundTransactionId: string;
+  outboundTransactionId: string;
+  reason: "ambiguous" | "exact" | "partial";
+}>;
+
+const transferWindowMs = 3 * 24 * 60 * 60 * 1_000;
+
+/** Finds possible cross-account transfers without silently confirming them. */
+export function detectTransferCandidates(
+  transactions: readonly TransferTransaction[],
+): readonly TransferCandidate[] {
+  const possible = transactions.flatMap((outbound) => {
+    if (outbound.amountMinor >= 0) return [];
+    return transactions.flatMap((inbound) => {
+      if (
+        inbound.amountMinor <= 0 ||
+        inbound.accountId === outbound.accountId ||
+        inbound.currency !== outbound.currency
+      ) {
+        return [];
+      }
+      const dateDistance = Math.abs(
+        Date.parse(inbound.transactionDate) -
+          Date.parse(outbound.transactionDate),
+      );
+      if (!Number.isFinite(dateDistance) || dateDistance > transferWindowMs) {
+        return [];
+      }
+      const difference = Math.abs(
+        Math.abs(outbound.amountMinor) - inbound.amountMinor,
+      );
+      const tolerance = Math.max(
+        100,
+        Math.round(Math.abs(outbound.amountMinor) * 0.01),
+      );
+      if (difference > tolerance) return [];
+      return [
+        {
+          confidence: difference === 0 ? 1 : 0.7,
+          inboundTransactionId: inbound.id,
+          outboundTransactionId: outbound.id,
+          reason: difference === 0 ? ("exact" as const) : ("partial" as const),
+        },
+      ];
+    });
+  });
+
+  const occurrenceCount = new Map<string, number>();
+  for (const candidate of possible) {
+    for (const id of [
+      candidate.inboundTransactionId,
+      candidate.outboundTransactionId,
+    ]) {
+      occurrenceCount.set(id, (occurrenceCount.get(id) ?? 0) + 1);
+    }
+  }
+  return possible
+    .map((candidate) =>
+      (occurrenceCount.get(candidate.inboundTransactionId) ?? 0) > 1 ||
+      (occurrenceCount.get(candidate.outboundTransactionId) ?? 0) > 1
+        ? { ...candidate, confidence: 0.4, reason: "ambiguous" as const }
+        : candidate,
+    )
+    .sort(
+      (left, right) =>
+        left.outboundTransactionId.localeCompare(right.outboundTransactionId) ||
+        left.inboundTransactionId.localeCompare(right.inboundTransactionId),
+    );
+}
+
+export function excludeConfirmedTransfers<T extends Readonly<{ id: string }>>(
+  transactions: readonly T[],
+  confirmedTransactionIds: ReadonlySet<string>,
+): readonly T[] {
+  return transactions.filter(
+    (transaction) => !confirmedTransactionIds.has(transaction.id),
+  );
+}

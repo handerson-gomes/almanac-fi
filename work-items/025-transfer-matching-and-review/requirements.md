@@ -22,4 +22,8 @@ Test exact, partial, ambiguous, and reversal transfer cases.
 
 ## Status
 
-Not started
+Complete
+
+## User experience impact
+
+Users can scan for likely transfers between their accounts, review exact, partial, or ambiguous candidates, confirm or reject a match, and undo a confirmed match. Only confirmed pairs are excluded from income and spending reports, and every review decision is retained in the audit history.

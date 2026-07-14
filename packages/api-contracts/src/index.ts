@@ -306,6 +306,35 @@ export type CsvMappingRecord = z.infer<typeof csvMappingRecordSchema>;
 export type Transaction = z.infer<typeof transactionSchema>;
 export type TransactionDetails = z.infer<typeof transactionDetailsSchema>;
 
+export const transferMatchStatusSchema = z.enum([
+  "candidate",
+  "confirmed",
+  "rejected",
+]);
+export const transferMatchSchema = z.object({
+  confidence: z.number().min(0).max(1),
+  createdAt: z.iso.datetime(),
+  decidedAt: z.iso.datetime().nullable(),
+  decidedBy: z.string().nullable(),
+  id: entityIdSchema,
+  inboundTransactionId: entityIdSchema,
+  outboundTransactionId: entityIdSchema,
+  reason: z.enum(["ambiguous", "exact", "partial"]),
+  status: transferMatchStatusSchema,
+  updatedAt: z.iso.datetime(),
+});
+export const transferMatchListSchema = z.object({
+  items: z.array(transferMatchSchema),
+});
+export const transferMatchDecisionSchema = z.object({
+  actor: z.string().trim().min(1).max(100).default("user"),
+  decision: z.enum(["confirm", "reject", "unmatch"]),
+});
+export const transferReportingSummarySchema = z.object({
+  excludedTransactionIds: z.array(entityIdSchema),
+});
+export type TransferMatch = z.infer<typeof transferMatchSchema>;
+
 export const problemSchema = z.object({
   detail: z.string(),
   instance: z.string().optional(),

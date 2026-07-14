@@ -118,6 +118,28 @@ const migrations = [
       DROP TABLE IF EXISTS transactions; DROP TABLE IF EXISTS categorization_rules; DROP TABLE IF EXISTS categories;
       DROP INDEX IF EXISTS source_records_checksum_unique;`,
   },
+  {
+    id: "0004_transfer_matches",
+    up: `
+      CREATE TABLE IF NOT EXISTS transfer_matches (
+        id TEXT PRIMARY KEY,
+        outbound_transaction_id TEXT NOT NULL REFERENCES transactions(id),
+        inbound_transaction_id TEXT NOT NULL REFERENCES transactions(id),
+        status TEXT NOT NULL CHECK (status IN ('candidate', 'confirmed', 'rejected')),
+        reason TEXT NOT NULL CHECK (reason IN ('ambiguous', 'exact', 'partial')),
+        confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL, decided_at TEXT, decided_by TEXT,
+        UNIQUE(outbound_transaction_id, inbound_transaction_id),
+        CHECK(outbound_transaction_id <> inbound_transaction_id)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS transfer_matches_confirmed_outbound
+        ON transfer_matches(outbound_transaction_id) WHERE status = 'confirmed';
+      CREATE UNIQUE INDEX IF NOT EXISTS transfer_matches_confirmed_inbound
+        ON transfer_matches(inbound_transaction_id) WHERE status = 'confirmed';
+    `,
+    down: `DROP INDEX IF EXISTS transfer_matches_confirmed_inbound;
+      DROP INDEX IF EXISTS transfer_matches_confirmed_outbound; DROP TABLE IF EXISTS transfer_matches;`,
+  },
 ] as const;
 
 export type AppDatabase = Readonly<{
