@@ -335,6 +335,55 @@ export const transferReportingSummarySchema = z.object({
 });
 export type TransferMatch = z.infer<typeof transferMatchSchema>;
 
+export const categorizationMethodSchema = z.enum([
+  "ai",
+  "confirmed_history",
+  "merchant_rule",
+  "statistical",
+  "source_category",
+  "user_rule",
+]);
+export const categorizationReviewStatusSchema = z.enum([
+  "pending",
+  "confirmed",
+  "dismissed",
+]);
+export const categorizationReviewSchema = z.object({
+  confidence: z.number().min(0).max(1).nullable(),
+  confirmedAt: z.iso.datetime().nullable(),
+  confirmedBy: z.string().nullable(),
+  confirmedCategoryId: entityIdSchema.nullable(),
+  createdAt: z.iso.datetime(),
+  id: entityIdSchema,
+  method: categorizationMethodSchema.nullable(),
+  normalizedMerchant: z.string().nullable(),
+  ruleId: entityIdSchema.nullable(),
+  status: categorizationReviewStatusSchema,
+  suggestedCategoryId: entityIdSchema.nullable(),
+  transactionId: entityIdSchema,
+  updatedAt: z.iso.datetime(),
+});
+export const categorizationReviewListSchema = z.object({
+  items: z.array(categorizationReviewSchema),
+});
+export const categorizationSuggestionRequestSchema = z
+  .object({
+    aiCategoryId: entityIdSchema.optional(),
+    enableAi: z.boolean().default(false),
+    transactionId: entityIdSchema,
+  })
+  .refine(
+    (value) => value.enableAi || value.aiCategoryId === undefined,
+    "AI must be explicitly enabled",
+  );
+export const categorizationBatchRequestSchema = z.object({
+  actor: z.string().trim().min(1).max(100).default("user"),
+  categoryId: entityIdSchema.optional(),
+  createMerchantRule: z.boolean().default(false),
+  decision: z.enum(["confirm", "dismiss"]),
+  ids: z.array(entityIdSchema).min(1).max(100),
+});
+
 export const problemSchema = z.object({
   detail: z.string(),
   instance: z.string().optional(),

@@ -10,6 +10,8 @@ import {
   moneySchema,
   multiplyMoneyByBasisPoints,
   serializeMoney,
+  normalizeMerchant,
+  selectCategorySuggestion,
   transactionAmountSchema,
 } from "./index.js";
 
@@ -111,5 +113,37 @@ describe("transfer matching", () => {
     expect(excludeConfirmedTransfers(items, new Set(["transfer"]))).toEqual([
       { id: "spend" },
     ]);
+  });
+});
+
+describe("categorization layers", () => {
+  test("normalizes merchants and preserves deterministic precedence", () => {
+    expect(normalizeMerchant("POS ACME COFFEE #123456")).toBe("acme coffee");
+    const suggestion = (
+      method: "ai" | "source_category",
+      categoryId: string,
+    ) => ({
+      categoryId,
+      confidence: 0.8,
+      method,
+      ruleId: null,
+    });
+    expect(
+      selectCategorySuggestion({
+        ai: suggestion("ai", "ai-category"),
+        sourceCategory: suggestion("source_category", "source-category"),
+      }),
+    ).toMatchObject({ categoryId: "source-category" });
+  });
+
+  test("does not expose the AI layer unless explicitly enabled", () => {
+    const ai = {
+      categoryId: "ai-category",
+      confidence: 0.5,
+      method: "ai" as const,
+      ruleId: null,
+    };
+    expect(selectCategorySuggestion({ ai })).toBeUndefined();
+    expect(selectCategorySuggestion({ ai }, { enableAi: true })).toEqual(ai);
   });
 });

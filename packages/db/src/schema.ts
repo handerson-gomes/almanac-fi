@@ -184,6 +184,39 @@ export const transferMatches = sqliteTable("transfer_matches", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const categorizationReviews = sqliteTable("categorization_reviews", {
+  confidence: real("confidence"),
+  confirmedAt: text("confirmed_at"),
+  confirmedBy: text("confirmed_by"),
+  confirmedCategoryId: text("confirmed_category_id").references(
+    () => categories.id,
+  ),
+  createdAt: text("created_at").notNull(),
+  id: text("id").primaryKey(),
+  method: text("method", {
+    enum: [
+      "ai",
+      "confirmed_history",
+      "merchant_rule",
+      "statistical",
+      "source_category",
+      "user_rule",
+    ],
+  }),
+  normalizedMerchant: text("normalized_merchant"),
+  ruleId: text("rule_id").references(() => categorizationRules.id),
+  status: text("status", {
+    enum: ["pending", "confirmed", "dismissed"],
+  }).notNull(),
+  suggestedCategoryId: text("suggested_category_id").references(
+    () => categories.id,
+  ),
+  transactionId: text("transaction_id")
+    .notNull()
+    .references(() => transactions.id),
+  updatedAt: text("updated_at").notNull(),
+});
+
 export const csvMappings = sqliteTable("csv_mappings", {
   createdAt: text("created_at").notNull(),
   id: text("id").primaryKey(),

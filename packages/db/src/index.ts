@@ -140,6 +140,26 @@ const migrations = [
     down: `DROP INDEX IF EXISTS transfer_matches_confirmed_inbound;
       DROP INDEX IF EXISTS transfer_matches_confirmed_outbound; DROP TABLE IF EXISTS transfer_matches;`,
   },
+  {
+    id: "0005_categorization_reviews",
+    up: `
+      CREATE TABLE IF NOT EXISTS categorization_reviews (
+        id TEXT PRIMARY KEY,
+        transaction_id TEXT NOT NULL UNIQUE REFERENCES transactions(id),
+        normalized_merchant TEXT,
+        suggested_category_id TEXT REFERENCES categories(id),
+        method TEXT CHECK (method IN ('ai', 'confirmed_history', 'merchant_rule', 'statistical', 'source_category', 'user_rule')),
+        confidence REAL CHECK (confidence >= 0 AND confidence <= 1),
+        rule_id TEXT REFERENCES categorization_rules(id),
+        status TEXT NOT NULL CHECK (status IN ('pending', 'confirmed', 'dismissed')),
+        confirmed_category_id TEXT REFERENCES categories(id),
+        confirmed_at TEXT, confirmed_by TEXT,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS categorization_reviews_status ON categorization_reviews(status, created_at);
+    `,
+    down: `DROP INDEX IF EXISTS categorization_reviews_status; DROP TABLE IF EXISTS categorization_reviews;`,
+  },
 ] as const;
 
 export type AppDatabase = Readonly<{

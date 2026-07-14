@@ -319,4 +319,84 @@ describe("SQLite foundation", () => {
     ).toBe("candidate");
     database.close();
   });
+
+  test("queues explainable categorization suggestions and confirms them in batches", () => {
+    const database = createDatabase();
+    database.migrate();
+    const unitOfWork = createUnitOfWork(database);
+    const account = unitOfWork.accounts.create({
+      accountType: "checking",
+      connectionId: null,
+      currency: "USD",
+      externalId: null,
+      name: "Review",
+      status: "active",
+    });
+    const category = unitOfWork.categories.create({
+      name: "Coffee",
+      parentId: null,
+      status: "active",
+    });
+    const batch = unitOfWork.importBatches.create({
+      actor: "user",
+      checksum: "review-batch",
+      source: "manual",
+    });
+    const source = unitOfWork.sourceRecords.create({
+      batchId: batch.id,
+      checksum: "review-source",
+      rawPayload: "{}",
+      sourceType: "manual",
+    });
+    const transaction = unitOfWork.transactions.create({
+      accountId: account.id,
+      amountMinor: -500,
+      categoryId: null,
+      currency: "USD",
+      merchant: "POS Cafe #12345",
+      payee: null,
+      postedAt: null,
+      sourceCategory: null,
+      sourceIdentity: "review:1",
+      sourceRecordId: source.id,
+      status: "posted",
+      transactionDate: "2026-07-13T00:00:00.000Z",
+    }).transaction;
+
+    const withoutAi = unitOfWork.categorizationReviews.suggest({
+      aiCategoryId: category.id,
+      transactionId: transaction.id,
+    });
+    expect(withoutAi).toMatchObject({ method: null, status: "pending" });
+    const withAi = unitOfWork.categorizationReviews.suggest({
+      aiCategoryId: category.id,
+      enableAi: true,
+      transactionId: transaction.id,
+    });
+    expect(withAi).toMatchObject({
+      method: "ai",
+      suggestedCategoryId: category.id,
+    });
+    const confirmed = unitOfWork.categorizationReviews.applyBatch({
+      actor: "user",
+      createMerchantRule: true,
+      decision: "confirm",
+      ids: [withAi?.id ?? ""],
+    });
+    expect(confirmed[0]).toMatchObject({
+      confirmedCategoryId: category.id,
+      status: "confirmed",
+    });
+    expect(unitOfWork.transactions.findById(transaction.id)?.categoryId).toBe(
+      category.id,
+    );
+    expect(
+      unitOfWork.categorizationRules.evaluate({
+        merchant: "cafe",
+        payee: null,
+        sourceCategory: null,
+      }),
+    ).toMatchObject({ categoryId: category.id });
+    database.close();
+  });
 });

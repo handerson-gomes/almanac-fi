@@ -22,4 +22,8 @@ Run fixtures for rule hits, merchant normalization, historical matches, ambiguou
 
 ## Status
 
-Not started
+Complete
+
+## User experience impact
+
+Users receive explainable local category suggestions in a predictable order and can focus on a queue of transactions that still need review. They can confirm or dismiss items in batches, preserve their decisions for future matching, and optionally create a merchant rule; AI suggestions remain off unless explicitly requested.

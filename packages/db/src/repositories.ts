@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { detectTransferCandidates } from "@almanac-fi/core";
+import {
+  detectTransferCandidates,
+  normalizeMerchant,
+  selectCategorySuggestion,
+  type CategorizationMethod,
+} from "@almanac-fi/core";
 
 import type { AppDatabase } from "./index.js";
 import { now } from "./index.js";
@@ -168,6 +173,21 @@ export type TransferMatch = Readonly<{
   status: "candidate" | "confirmed" | "rejected";
   updatedAt: string;
 }>;
+export type CategorizationReview = Readonly<{
+  confidence: number | null;
+  confirmedAt: string | null;
+  confirmedBy: string | null;
+  confirmedCategoryId: string | null;
+  createdAt: string;
+  id: string;
+  method: CategorizationMethod | null;
+  normalizedMerchant: string | null;
+  ruleId: string | null;
+  status: "confirmed" | "dismissed" | "pending";
+  suggestedCategoryId: string | null;
+  transactionId: string;
+  updatedAt: string;
+}>;
 type CategorizationRuleUpdate = {
   [
     Key in
@@ -316,12 +336,34 @@ export interface TransferMatchRepository {
   list(status?: TransferMatch["status"]): readonly TransferMatch[];
   refreshCandidates(): readonly TransferMatch[];
 }
+export interface CategorizationReviewRepository {
+  applyBatch(
+    input: Readonly<{
+      actor: string;
+      categoryId?: string | undefined;
+      createMerchantRule?: boolean | undefined;
+      decision: "confirm" | "dismiss";
+      ids: readonly string[];
+    }>,
+  ): readonly CategorizationReview[];
+  list(
+    status?: CategorizationReview["status"],
+  ): readonly CategorizationReview[];
+  suggest(
+    input: Readonly<{
+      aiCategoryId?: string | undefined;
+      enableAi?: boolean | undefined;
+      transactionId: string;
+    }>,
+  ): CategorizationReview | undefined;
+}
 
 export interface UnitOfWork {
   readonly accounts: AccountRepository;
   readonly auditEvents: AuditEventRepository;
   readonly categories: CategoryRepository;
   readonly categorizationRules: CategorizationRuleRepository;
+  readonly categorizationReviews: CategorizationReviewRepository;
   readonly csvMappings: CsvMappingRepository;
   readonly importBatches: ImportBatchRepository;
   readonly institutionConnections: InstitutionConnectionRepository;
@@ -1184,11 +1226,194 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
       return transferMatches.list("candidate");
     },
   };
+  function categorizationReviewRecord(
+    id: string,
+  ): CategorizationReview | undefined {
+    return database.sqlite
+      .prepare(
+        "SELECT id, transaction_id AS transactionId, normalized_merchant AS normalizedMerchant, suggested_category_id AS suggestedCategoryId, method, confidence, rule_id AS ruleId, status, confirmed_category_id AS confirmedCategoryId, confirmed_at AS confirmedAt, confirmed_by AS confirmedBy, created_at AS createdAt, updated_at AS updatedAt FROM categorization_reviews WHERE id = ?",
+      )
+      .get(id) as CategorizationReview | undefined;
+  }
+  const categorizationReviews: CategorizationReviewRepository = {
+    applyBatch(input) {
+      const updated: CategorizationReview[] = [];
+      for (const id of input.ids) {
+        const current = categorizationReviewRecord(id);
+        if (!current || current.status !== "pending") continue;
+        const categoryId = input.categoryId ?? current.suggestedCategoryId;
+        if (input.decision === "confirm" && categoryId === null) {
+          throw new Error("A category is required to confirm a review.");
+        }
+        const timestamp = now();
+        database.sqlite
+          .prepare(
+            "UPDATE categorization_reviews SET status = ?, confirmed_category_id = ?, confirmed_at = ?, confirmed_by = ?, updated_at = ? WHERE id = ?",
+          )
+          .run(
+            input.decision === "confirm" ? "confirmed" : "dismissed",
+            input.decision === "confirm" ? categoryId : null,
+            input.decision === "confirm" ? timestamp : null,
+            input.actor,
+            timestamp,
+            id,
+          );
+        if (input.decision === "confirm") {
+          database.sqlite
+            .prepare(
+              "UPDATE transactions SET category_id = ?, updated_at = ? WHERE id = ?",
+            )
+            .run(categoryId, timestamp, current.transactionId);
+          if (
+            input.createMerchantRule === true &&
+            current.normalizedMerchant !== null
+          ) {
+            const exists = database.sqlite
+              .prepare(
+                "SELECT id FROM categorization_rules WHERE match_field = 'merchant' AND lower(match_value) = lower(?)",
+              )
+              .get(current.normalizedMerchant);
+            if (!exists) {
+              categorizationRules.create({
+                active: true,
+                categoryId: categoryId ?? "",
+                matchField: "merchant",
+                matchValue: current.normalizedMerchant,
+                name: `Merchant: ${current.normalizedMerchant}`,
+                precedence: 100,
+              });
+            }
+          }
+        }
+        const next = categorizationReviewRecord(id);
+        if (next) {
+          updated.push(next);
+          auditEvents.append({
+            actor: input.actor,
+            afterJson: JSON.stringify(next),
+            beforeJson: JSON.stringify(current),
+            entityId: id,
+            entityType: "categorization_review",
+            operation: input.decision,
+            sourceRecordId: null,
+          });
+        }
+      }
+      return updated;
+    },
+    list(status) {
+      return database.sqlite
+        .prepare(
+          `SELECT id, transaction_id AS transactionId, normalized_merchant AS normalizedMerchant, suggested_category_id AS suggestedCategoryId, method, confidence, rule_id AS ruleId, status, confirmed_category_id AS confirmedCategoryId, confirmed_at AS confirmedAt, confirmed_by AS confirmedBy, created_at AS createdAt, updated_at AS updatedAt FROM categorization_reviews ${status === undefined ? "" : "WHERE status = ?"} ORDER BY created_at, id`,
+        )
+        .all(
+          ...(status === undefined ? [] : [status]),
+        ) as CategorizationReview[];
+    },
+    suggest(input) {
+      const transaction = transactions.findById(input.transactionId);
+      if (
+        !transaction ||
+        transferMatches.confirmedTransactionIds().has(transaction.id)
+      )
+        return undefined;
+      const normalizedMerchant = normalizeMerchant(
+        transaction.merchant ?? transaction.payee,
+      );
+      const exactRule = categorizationRules.evaluate(transaction);
+      const historical =
+        normalizedMerchant === null
+          ? undefined
+          : (database.sqlite
+              .prepare(
+                "SELECT confirmed_category_id AS categoryId FROM categorization_reviews WHERE normalized_merchant = ? AND status = 'confirmed' ORDER BY confirmed_at DESC LIMIT 1",
+              )
+              .get(normalizedMerchant) as { categoryId: string } | undefined);
+      const sourceCategory =
+        transaction.sourceCategory === null
+          ? undefined
+          : categories.findByName(transaction.sourceCategory);
+      const suggestion = selectCategorySuggestion(
+        {
+          ai:
+            input.aiCategoryId === undefined
+              ? undefined
+              : {
+                  categoryId: input.aiCategoryId,
+                  confidence: 0.5,
+                  method: "ai",
+                  ruleId: null,
+                },
+          confirmedHistory:
+            historical === undefined
+              ? undefined
+              : {
+                  categoryId: historical.categoryId,
+                  confidence: 0.95,
+                  method: "confirmed_history",
+                  ruleId: null,
+                },
+          merchantRule:
+            exactRule?.matchField !== "merchant"
+              ? undefined
+              : {
+                  categoryId: exactRule.categoryId,
+                  confidence: 1,
+                  method: "merchant_rule",
+                  ruleId: exactRule.id,
+                },
+          sourceCategory:
+            sourceCategory === undefined
+              ? undefined
+              : {
+                  categoryId: sourceCategory.id,
+                  confidence: 0.9,
+                  method: "source_category",
+                  ruleId: null,
+                },
+          userRule:
+            exactRule === undefined || exactRule.matchField === "merchant"
+              ? undefined
+              : {
+                  categoryId: exactRule.categoryId,
+                  confidence: 1,
+                  method: "user_rule",
+                  ruleId: exactRule.id,
+                },
+        },
+        { enableAi: input.enableAi === true },
+      );
+      const timestamp = now();
+      const existing = database.sqlite
+        .prepare(
+          "SELECT id FROM categorization_reviews WHERE transaction_id = ?",
+        )
+        .get(transaction.id) as { id: string } | undefined;
+      const id = existing?.id ?? randomUUID();
+      database.sqlite
+        .prepare(
+          "INSERT INTO categorization_reviews (id, transaction_id, normalized_merchant, suggested_category_id, method, confidence, rule_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?) ON CONFLICT(transaction_id) DO UPDATE SET normalized_merchant = excluded.normalized_merchant, suggested_category_id = excluded.suggested_category_id, method = excluded.method, confidence = excluded.confidence, rule_id = excluded.rule_id, updated_at = excluded.updated_at WHERE categorization_reviews.status = 'pending'",
+        )
+        .run(
+          id,
+          transaction.id,
+          normalizedMerchant,
+          suggestion?.categoryId ?? null,
+          suggestion?.method ?? null,
+          suggestion?.confidence ?? null,
+          suggestion?.ruleId ?? null,
+          timestamp,
+          timestamp,
+        );
+      return categorizationReviewRecord(id);
+    },
+  };
   return Object.freeze({
     accounts,
     auditEvents,
     categories,
     categorizationRules,
+    categorizationReviews,
     csvMappings,
     importBatches,
     institutionConnections,

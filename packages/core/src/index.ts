@@ -172,3 +172,55 @@ export function excludeConfirmedTransfers<T extends Readonly<{ id: string }>>(
     (transaction) => !confirmedTransactionIds.has(transaction.id),
   );
 }
+
+export type CategorizationMethod =
+  | "ai"
+  | "confirmed_history"
+  | "merchant_rule"
+  | "statistical"
+  | "source_category"
+  | "user_rule";
+export type CategorySuggestion = Readonly<{
+  categoryId: string;
+  confidence: number;
+  method: CategorizationMethod;
+  ruleId: string | null;
+}>;
+export type CategorizationLayers = Readonly<{
+  ai?: CategorySuggestion | undefined;
+  confirmedHistory?: CategorySuggestion | undefined;
+  merchantRule?: CategorySuggestion | undefined;
+  sourceCategory?: CategorySuggestion | undefined;
+  statistical?: CategorySuggestion | undefined;
+  userRule?: CategorySuggestion | undefined;
+}>;
+
+/** Normalizes statement noise while retaining a stable local merchant identity. */
+export function normalizeMerchant(value: string | null): string | null {
+  if (value === null) return null;
+  const normalized = value
+    .normalize("NFKD")
+    .replaceAll(/\p{Diacritic}/gu, "")
+    .toLocaleLowerCase()
+    .replaceAll(/\b(?:pos|debit|purchase|card)\b/giu, " ")
+    .replaceAll(/[#*]\d+|\b\d{4,}\b/gu, " ")
+    .replaceAll(/[^a-z0-9]+/gu, " ")
+    .trim()
+    .replaceAll(/\s+/gu, " ");
+  return normalized || null;
+}
+
+export function selectCategorySuggestion(
+  layers: CategorizationLayers,
+  options: Readonly<{ enableAi?: boolean }> = {},
+): CategorySuggestion | undefined {
+  const ordered = [
+    layers.sourceCategory,
+    layers.userRule,
+    layers.merchantRule,
+    layers.confirmedHistory,
+    layers.statistical,
+    options.enableAi === true ? layers.ai : undefined,
+  ];
+  return ordered.find((suggestion) => suggestion !== undefined);
+}

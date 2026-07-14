@@ -14,6 +14,11 @@ import {
   accountSchema,
   categorizationRuleListSchema,
   categorizationRuleSchema,
+  categorizationBatchRequestSchema,
+  categorizationReviewListSchema,
+  categorizationReviewSchema,
+  categorizationReviewStatusSchema,
+  categorizationSuggestionRequestSchema,
   categoryListSchema,
   categorySchema,
   createAccountBalanceSchema,
@@ -366,6 +371,47 @@ export async function createServer(
     const rule = unitOfWork.categorizationRules.update(id, input);
     if (!rule) notFound("The categorization rule does not exist.");
     return categorizationRuleSchema.parse(rule);
+  });
+  app.get("/categorization-reviews", async (request) => {
+    const status = parseRequest(
+      categorizationReviewStatusSchema.optional(),
+      (request.query as { status?: unknown }).status,
+    );
+    return categorizationReviewListSchema.parse({
+      items: unitOfWork.categorizationReviews.list(status),
+    });
+  });
+  app.post("/categorization-reviews/suggest", async (request) => {
+    const input = parseRequest(
+      categorizationSuggestionRequestSchema,
+      request.body,
+    );
+    if (
+      input.aiCategoryId !== undefined &&
+      !unitOfWork.categories.findById(input.aiCategoryId)
+    ) {
+      notFound("The AI-suggested category does not exist.");
+    }
+    const review = unitOfWork.categorizationReviews.suggest(input);
+    if (!review) notFound("The transaction is unavailable for categorization.");
+    return categorizationReviewSchema.parse(review);
+  });
+  app.post("/categorization-reviews/batch", async (request) => {
+    const input = parseRequest(categorizationBatchRequestSchema, request.body);
+    if (
+      input.categoryId !== undefined &&
+      !unitOfWork.categories.findById(input.categoryId)
+    ) {
+      notFound("The category does not exist.");
+    }
+    try {
+      return categorizationReviewListSchema.parse({
+        items: unitOfWork.categorizationReviews.applyBatch(input),
+      });
+    } catch (error) {
+      if (error instanceof Error) badRequest(error.message);
+      throw error;
+    }
   });
   app.get("/transactions", async (request) => {
     const filter = parseRequest(transactionFilterSchema, request.query);
