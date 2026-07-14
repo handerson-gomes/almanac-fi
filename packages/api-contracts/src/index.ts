@@ -719,6 +719,92 @@ export const investmentValuationSchema = z.object({
   totalValueMinor: z.number().int().safe(),
 });
 
+export const liabilitySchema = z.object({
+  accountId: entityIdSchema.nullable(),
+  confidence: z.number().min(0).max(1),
+  createdAt: z.iso.datetime(),
+  currency: currencySchema,
+  householdId: entityIdSchema,
+  id: entityIdSchema,
+  name: z.string().min(1),
+  source: z.string().min(1),
+  updatedAt: z.iso.datetime(),
+});
+export const createLiabilitySchema = liabilitySchema
+  .pick({
+    accountId: true,
+    confidence: true,
+    currency: true,
+    name: true,
+    source: true,
+  })
+  .partial({ accountId: true })
+  .extend({ accountId: entityIdSchema.nullable().default(null) });
+export const liabilityListSchema = z.object({
+  items: z.array(liabilitySchema),
+});
+export const liabilityTermsSchema = z.object({
+  annualRateBps: z.number().int().nonnegative().nullable(),
+  balanceMinor: z.number().int().nonnegative(),
+  createdAt: z.iso.datetime(),
+  effectiveFrom: z.iso.date(),
+  effectiveTo: z.iso.date().nullable(),
+  id: entityIdSchema,
+  liabilityId: entityIdSchema,
+  minimumPaymentMinor: z.number().int().nonnegative(),
+  paymentDay: z.number().int().min(1).max(31).nullable(),
+});
+export const createLiabilityTermsSchema = liabilityTermsSchema
+  .omit({ createdAt: true, id: true, liabilityId: true })
+  .partial({ annualRateBps: true, effectiveTo: true, paymentDay: true })
+  .extend({
+    annualRateBps: z.number().int().nonnegative().nullable().default(null),
+    effectiveTo: z.iso.date().nullable().default(null),
+    paymentDay: z.number().int().min(1).max(31).nullable().default(null),
+  });
+export const recurringObligationSchema = z.object({
+  amountMinor: z.number().int().nonnegative(),
+  cadence: z.enum(["annual", "monthly", "weekly"]),
+  confidence: z.number().min(0).max(1),
+  createdAt: z.iso.datetime(),
+  currency: currencySchema,
+  effectiveFrom: z.iso.date(),
+  effectiveTo: z.iso.date().nullable(),
+  householdId: entityIdSchema,
+  id: entityIdSchema,
+  liabilityId: entityIdSchema.nullable(),
+  name: z.string().min(1),
+  paymentDay: z.number().int().min(1).max(31).nullable(),
+  source: z.string().min(1),
+  updatedAt: z.iso.datetime(),
+});
+export const createRecurringObligationSchema = recurringObligationSchema
+  .omit({ createdAt: true, householdId: true, id: true, updatedAt: true })
+  .partial({ effectiveTo: true, liabilityId: true, paymentDay: true })
+  .extend({
+    effectiveTo: z.iso.date().nullable().default(null),
+    liabilityId: entityIdSchema.nullable().default(null),
+    paymentDay: z.number().int().min(1).max(31).nullable().default(null),
+  });
+export const recurringObligationListSchema = z.object({
+  items: z.array(recurringObligationSchema),
+});
+export const forecastObligationListSchema = z.object({
+  items: z.array(
+    z.object({
+      amountMinor: z.number().int().nonnegative(),
+      currency: currencySchema,
+      id: entityIdSchema,
+      kind: z.enum(["debt_payment", "recurring"]),
+      name: z.string(),
+    }),
+  ),
+});
+export const liabilityScenarioOverrideSchema = z.object({
+  scenarioId: z.string().min(1),
+  terms: z.record(z.string(), z.number().nullable()),
+});
+
 export const problemSchema = z.object({
   detail: z.string(),
   instance: z.string().optional(),

@@ -22,4 +22,8 @@ Run debt/obligation validation, historical effective-date, forecast-input, and s
 
 ## Status
 
-Not started
+Complete
+
+## User experience impact
+
+Users can record debts and recurring commitments with dated balances, known or unknown rates, minimum payments, sources, and confidence. Forecasts receive each obligation exactly once, prior terms remain available historically, and scenario-specific payoff terms can be explored without changing the active debt record.

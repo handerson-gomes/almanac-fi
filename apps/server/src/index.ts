@@ -30,6 +30,9 @@ import {
   createFinancialGoalSchema,
   createHoldingSchema,
   createInvestmentTransactionSchema,
+  createLiabilitySchema,
+  createLiabilityTermsSchema,
+  createRecurringObligationSchema,
   createSecuritySchema,
   createScenarioAssumptionSchema,
   csvImportResultSchema,
@@ -39,6 +42,7 @@ import {
   csvPreviewSchema,
   financialGoalListSchema,
   financialGoalSchema,
+  forecastObligationListSchema,
   entityIdSchema,
   healthResponseSchema,
   holdingListSchema,
@@ -61,12 +65,18 @@ import {
   investmentTransactionListSchema,
   investmentTransactionSchema,
   investmentValuationSchema,
+  liabilityListSchema,
+  liabilityScenarioOverrideSchema,
+  liabilitySchema,
+  liabilityTermsSchema,
   openApiDocument,
   paginationQuerySchema,
   personListSchema,
   personSchema,
   problem,
   readinessResponseSchema,
+  recurringObligationListSchema,
+  recurringObligationSchema,
   scenarioAssumptionListSchema,
   scenarioAssumptionSchema,
   securityListSchema,
@@ -761,6 +771,106 @@ export async function createServer(
       ),
     ),
   );
+  app.get("/households/:id/liabilities", async (request) => {
+    const householdId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    return liabilityListSchema.parse({
+      items: unitOfWork.obligations.listLiabilities(householdId),
+    });
+  });
+  app.post("/households/:id/liabilities", async (request, reply) => {
+    const householdId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    return reply
+      .status(201)
+      .send(
+        liabilitySchema.parse(
+          unitOfWork.obligations.createLiability({
+            ...parseRequest(createLiabilitySchema, request.body),
+            householdId,
+          }),
+        ),
+      );
+  });
+  app.post("/liabilities/:id/terms", async (request, reply) => {
+    const liabilityId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    try {
+      return reply
+        .status(201)
+        .send(
+          liabilityTermsSchema.parse(
+            unitOfWork.obligations.addTerms({
+              ...parseRequest(createLiabilityTermsSchema, request.body),
+              liabilityId,
+            }),
+          ),
+        );
+    } catch (error) {
+      if (error instanceof Error) badRequest(error.message);
+      throw error;
+    }
+  });
+  app.get("/households/:id/obligations", async (request) => {
+    const householdId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const { asOf } = parseRequest(householdAsOfQuerySchema, request.query);
+    return recurringObligationListSchema.parse({
+      items: unitOfWork.obligations.listObligations(householdId, asOf),
+    });
+  });
+  app.post("/households/:id/obligations", async (request, reply) => {
+    const householdId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    return reply
+      .status(201)
+      .send(
+        recurringObligationSchema.parse(
+          unitOfWork.obligations.createObligation({
+            ...parseRequest(createRecurringObligationSchema, request.body),
+            householdId,
+          }),
+        ),
+      );
+  });
+  app.get("/households/:id/forecast-obligations", async (request) => {
+    const householdId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const { asOf } = parseRequest(householdAsOfQuerySchema, request.query);
+    return forecastObligationListSchema.parse({
+      items: unitOfWork.obligations.forecastInputs(
+        householdId,
+        asOf ?? new Date().toISOString().slice(0, 10),
+      ),
+    });
+  });
+  app.post("/liabilities/:id/scenario-overrides", async (request, reply) => {
+    const liabilityId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const input = parseRequest(liabilityScenarioOverrideSchema, request.body);
+    return reply
+      .status(201)
+      .send(
+        unitOfWork.obligations.createScenarioOverride({
+          ...input,
+          liabilityId,
+        }),
+      );
+  });
   app.post("/csv-imports/preview", async (request) => {
     const input = parseRequest(csvPreviewRequestSchema, request.body);
     if (!unitOfWork.accounts.findById(input.accountId))

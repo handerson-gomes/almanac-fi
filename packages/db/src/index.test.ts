@@ -645,4 +645,97 @@ describe("SQLite foundation", () => {
     expect(unitOfWork.investments.listTransactions(account.id)).toHaveLength(1);
     database.close();
   });
+
+  test("versions debt terms, deduplicates forecast inputs, and isolates scenario overrides", () => {
+    const database = createDatabase();
+    database.migrate();
+    const unitOfWork = createUnitOfWork(database);
+    const household = unitOfWork.households.create({
+      currency: "USD",
+      name: "Debts",
+    });
+    const debt = unitOfWork.obligations.createLiability({
+      accountId: null,
+      confidence: 1,
+      currency: "USD",
+      householdId: household.id,
+      name: "Student loan",
+      source: "user",
+    });
+    unitOfWork.obligations.addTerms({
+      annualRateBps: null,
+      balanceMinor: 1_000_000,
+      effectiveFrom: "2026-01-01",
+      effectiveTo: "2027-01-01",
+      liabilityId: debt.id,
+      minimumPaymentMinor: 20_000,
+      paymentDay: 1,
+    });
+    unitOfWork.obligations.addTerms({
+      annualRateBps: 500,
+      balanceMinor: 900_000,
+      effectiveFrom: "2027-01-01",
+      effectiveTo: null,
+      liabilityId: debt.id,
+      minimumPaymentMinor: 20_000,
+      paymentDay: 1,
+    });
+    unitOfWork.obligations.createObligation({
+      amountMinor: 20_000,
+      cadence: "monthly",
+      confidence: 1,
+      currency: "USD",
+      effectiveFrom: "2026-01-01",
+      effectiveTo: null,
+      householdId: household.id,
+      liabilityId: debt.id,
+      name: "Loan autopay",
+      paymentDay: 1,
+      source: "user",
+    });
+    unitOfWork.obligations.createObligation({
+      amountMinor: 12_000,
+      cadence: "annual",
+      confidence: 1,
+      currency: "USD",
+      effectiveFrom: "2026-01-01",
+      effectiveTo: null,
+      householdId: household.id,
+      liabilityId: null,
+      name: "Membership",
+      paymentDay: null,
+      source: "user",
+    });
+    expect(
+      unitOfWork.obligations.forecastInputs(household.id, "2026-06-01"),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ amountMinor: 20_000, kind: "debt_payment" }),
+        expect.objectContaining({ amountMinor: 1_000, kind: "recurring" }),
+      ]),
+    );
+    unitOfWork.obligations.createScenarioOverride({
+      liabilityId: debt.id,
+      scenarioId: "payoff",
+      terms: { minimumPaymentMinor: 50_000 },
+    });
+    expect(
+      unitOfWork.obligations.resolveTerms(debt.id, "2026-06-01", "payoff"),
+    ).toMatchObject({ minimumPaymentMinor: 50_000, scenario: true });
+    expect(
+      unitOfWork.obligations.resolveTerms(debt.id, "2026-06-01"),
+    ).toMatchObject({ minimumPaymentMinor: 20_000 });
+    expect(() =>
+      unitOfWork.obligations.addTerms({
+        annualRateBps: 100,
+        balanceMinor: 100,
+        effectiveFrom: "2028-01-01",
+        effectiveTo: null,
+        liabilityId: debt.id,
+        minimumPaymentMinor: 101,
+        paymentDay: 1,
+      }),
+    ).toThrow(/exceed/);
+    database.close();
+  });
 });

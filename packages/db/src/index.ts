@@ -257,6 +257,38 @@ const migrations = [
     down: `DROP INDEX IF EXISTS investment_transactions_history; DROP INDEX IF EXISTS holdings_current;
       DROP TABLE IF EXISTS investment_transactions; DROP TABLE IF EXISTS holdings; DROP TABLE IF EXISTS securities;`,
   },
+  {
+    id: "0010_liabilities_and_obligations",
+    up: `
+      CREATE TABLE IF NOT EXISTS liabilities (
+        id TEXT PRIMARY KEY, household_id TEXT NOT NULL REFERENCES households(id), account_id TEXT REFERENCES accounts(id),
+        name TEXT NOT NULL, currency TEXT NOT NULL, source TEXT NOT NULL, confidence REAL NOT NULL,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS liability_terms (
+        id TEXT PRIMARY KEY, liability_id TEXT NOT NULL REFERENCES liabilities(id) ON DELETE CASCADE,
+        balance_minor INTEGER NOT NULL CHECK(balance_minor >= 0), annual_rate_bps INTEGER,
+        minimum_payment_minor INTEGER NOT NULL CHECK(minimum_payment_minor >= 0), payment_day INTEGER CHECK(payment_day BETWEEN 1 AND 31),
+        effective_from TEXT NOT NULL, effective_to TEXT, created_at TEXT NOT NULL,
+        CHECK(annual_rate_bps IS NULL OR annual_rate_bps >= 0), CHECK(effective_to IS NULL OR effective_to > effective_from),
+        CHECK(balance_minor = 0 OR minimum_payment_minor <= balance_minor)
+      );
+      CREATE TABLE IF NOT EXISTS recurring_obligations (
+        id TEXT PRIMARY KEY, household_id TEXT NOT NULL REFERENCES households(id), liability_id TEXT REFERENCES liabilities(id),
+        name TEXT NOT NULL, amount_minor INTEGER NOT NULL CHECK(amount_minor >= 0), currency TEXT NOT NULL,
+        cadence TEXT NOT NULL CHECK(cadence IN ('annual', 'monthly', 'weekly')), payment_day INTEGER,
+        effective_from TEXT NOT NULL, effective_to TEXT, source TEXT NOT NULL, confidence REAL NOT NULL,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL, CHECK(effective_to IS NULL OR effective_to > effective_from)
+      );
+      CREATE TABLE IF NOT EXISTS liability_scenario_overrides (
+        id TEXT PRIMARY KEY, scenario_id TEXT NOT NULL, liability_id TEXT NOT NULL REFERENCES liabilities(id),
+        terms_json TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(scenario_id, liability_id)
+      );
+      CREATE INDEX IF NOT EXISTS liability_terms_resolution ON liability_terms(liability_id, effective_from, effective_to);
+    `,
+    down: `DROP INDEX IF EXISTS liability_terms_resolution; DROP TABLE IF EXISTS liability_scenario_overrides;
+      DROP TABLE IF EXISTS recurring_obligations; DROP TABLE IF EXISTS liability_terms; DROP TABLE IF EXISTS liabilities;`,
+  },
 ] as const;
 
 export type AppDatabase = Readonly<{

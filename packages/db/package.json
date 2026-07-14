@@ -24,6 +24,10 @@
     "./investments": {
       "types": "./dist/investments.d.ts",
       "import": "./dist/investments.js"
+    },
+    "./obligations": {
+      "types": "./dist/obligations.d.ts",
+      "import": "./dist/obligations.js"
     }
   },
   "main": "./dist/index.js",

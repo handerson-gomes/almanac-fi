@@ -20,6 +20,10 @@ import {
   createInvestmentRepository,
   type InvestmentRepository,
 } from "./investments.js";
+import {
+  createObligationRepository,
+  type ObligationRepository,
+} from "./obligations.js";
 
 export type Page<T> = Readonly<{ items: readonly T[]; nextCursor?: string }>;
 export type PageRequest = Readonly<{
@@ -415,6 +419,7 @@ export interface UnitOfWork {
   readonly households: HouseholdRepository;
   readonly goals: GoalRepository;
   readonly investments: InvestmentRepository;
+  readonly obligations: ObligationRepository;
   readonly sourceRecords: SourceRecordRepository;
   readonly transactions: TransactionRepository;
   readonly transferMatches: TransferMatchRepository;
@@ -1557,6 +1562,9 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
   const investments = createInvestmentRepository(database, (input) => {
     auditEvents.append({ ...input, sourceRecordId: null });
   });
+  const obligations = createObligationRepository(database, (input) => {
+    auditEvents.append({ ...input, sourceRecordId: null });
+  });
   return Object.freeze({
     accounts,
     auditEvents,
@@ -1570,6 +1578,7 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
     households,
     goals,
     investments,
+    obligations,
     sourceRecords,
     transactions,
     transferMatches,
