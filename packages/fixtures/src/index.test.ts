@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { createDatabase } from "@financial-ai/db";
+import { createDatabase } from "@almanac-fi/db";
 
 import { listFixtures, seedFixture } from "./index.js";
 

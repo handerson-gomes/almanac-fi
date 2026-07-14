@@ -25,7 +25,7 @@ import {
   transactionDetailsSchema,
   type Transaction,
   type TransactionDetails,
-} from "@financial-ai/api-contracts";
+} from "@almanac-fi/api-contracts";
 
 export type {
   Account,

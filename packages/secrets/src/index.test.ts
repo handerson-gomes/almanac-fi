@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { schema } from "@financial-ai/db";
+import { schema } from "@almanac-fi/db";
 import {
   EnvironmentSecretStore,
   FakeSecretStore,
@@ -11,10 +11,10 @@ import {
 test("environment stores derive safe names and redact diagnostics", () => {
   const key = secretKeySchema.parse("simplefin-access-token");
   const store = new EnvironmentSecretStore({
-    FINANCIAL_AI_SECRET_SIMPLEFIN_ACCESS_TOKEN: "secret-value",
+    ALMANAC_FI_SECRET_SIMPLEFIN_ACCESS_TOKEN: "secret-value",
   });
   expect(environmentVariableName(key)).toBe(
-    "FINANCIAL_AI_SECRET_SIMPLEFIN_ACCESS_TOKEN",
+    "ALMANAC_FI_SECRET_SIMPLEFIN_ACCESS_TOKEN",
   );
   expect(store.get(key)).toBe("secret-value");
   expect(store.diagnostics()).toEqual({

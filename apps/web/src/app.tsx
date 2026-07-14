@@ -44,7 +44,7 @@ function Layout(): React.JSX.Element {
         Skip to main content
       </a>
       <header className="app-header">
-        <h1>Financial AI</h1>
+        <h1>Almanac FI</h1>
         <nav aria-label="Primary navigation" className="primary-nav">
           <Link to="/">Overview</Link>
           <Link to="/accounts">Accounts</Link>

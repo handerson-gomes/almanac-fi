@@ -9,8 +9,8 @@ import { ensureDataHome, loadConfig, startupDiagnostics } from "./index.js";
 describe("configuration", () => {
   test("environment values override .env values", () => {
     const config = loadConfig({
-      env: { FINANCIAL_AI_PORT: "4510" },
-      envFileContents: "FINANCIAL_AI_PORT=4511\nFINANCIAL_AI_LOG_LEVEL=debug",
+      env: { ALMANAC_FI_PORT: "4510" },
+      envFileContents: "ALMANAC_FI_PORT=4511\nALMANAC_FI_LOG_LEVEL=debug",
     });
 
     expect(config.port).toBe(4510);
@@ -19,14 +19,14 @@ describe("configuration", () => {
 
   test("rejects an invalid port with an actionable error", () => {
     expect(() =>
-      loadConfig({ env: { FINANCIAL_AI_PORT: "not-a-port" } }),
-    ).toThrow(/Invalid configuration: FINANCIAL_AI_PORT/);
+      loadConfig({ env: { ALMANAC_FI_PORT: "not-a-port" } }),
+    ).toThrow(/Invalid configuration: ALMANAC_FI_PORT/);
   });
 
   test("creates a local data directory and keeps diagnostics secret-free", async () => {
-    const tempDirectory = await mkdtemp(join(tmpdir(), "financial-ai-config-"));
+    const tempDirectory = await mkdtemp(join(tmpdir(), "almanac-fi-config-"));
     const dataHome = join(tempDirectory, "data");
-    const config = loadConfig({ env: { FINANCIAL_AI_DATA_HOME: dataHome } });
+    const config = loadConfig({ env: { ALMANAC_FI_DATA_HOME: dataHome } });
 
     await expect(ensureDataHome(config)).resolves.toBe(dataHome);
     expect(startupDiagnostics(config)).toEqual(

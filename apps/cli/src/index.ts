@@ -1,8 +1,6 @@
 #!/usr/bin/env node
-import { corePackageName } from "@financial-ai/core";
-
 export function createCliBootstrapMessage(): string {
-  return `CLI boundary ready; shared code resolves from ${corePackageName}.`;
+  return "almanac-fi v0.1.0 — your financial almanac";
 }
 
 console.info(createCliBootstrapMessage());

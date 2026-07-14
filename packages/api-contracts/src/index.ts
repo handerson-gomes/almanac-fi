@@ -332,7 +332,7 @@ export const readinessResponseSchema = z.object({
 });
 
 export const openApiDocument = Object.freeze({
-  info: { title: "Financial AI API", version: "0.0.0" },
+  info: { title: "Almanac FI API", version: "0.0.0" },
   openapi: "3.1.0",
   paths: {
     "/accounts": {

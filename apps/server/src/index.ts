@@ -6,7 +6,7 @@ import {
   ensureDataHome,
   loadConfig,
   type AppConfig,
-} from "@financial-ai/config";
+} from "@almanac-fi/config";
 import {
   accountBalanceListSchema,
   accountBalanceSchema,
@@ -42,10 +42,10 @@ import {
   updateCategorizationRuleSchema,
   updateCategorySchema,
   updateInstitutionConnectionSchema,
-} from "@financial-ai/api-contracts";
-import { createDatabase, type AppDatabase } from "@financial-ai/db";
-import { createUnitOfWork, inUnitOfWork } from "@financial-ai/db/repositories";
-import { initializeTelemetry } from "@financial-ai/telemetry";
+} from "@almanac-fi/api-contracts";
+import { createDatabase, type AppDatabase } from "@almanac-fi/db";
+import { createUnitOfWork, inUnitOfWork } from "@almanac-fi/db/repositories";
+import { initializeTelemetry } from "@almanac-fi/telemetry";
 import Fastify, {
   type FastifyInstance,
   type FastifyPluginAsync,
@@ -130,7 +130,7 @@ export async function createServer(
           requestId: requestIds.get(request) ?? randomUUID(),
           status,
           title: status === 500 ? "Internal Server Error" : "Request Error",
-          type: `https://financial-ai.local/problems/${status}`,
+          type: `https://almanac-fi.local/problems/${status}`,
         }),
       );
   });
@@ -145,7 +145,7 @@ export async function createServer(
           requestId: requestIds.get(request) ?? randomUUID(),
           status: 404,
           title: "Not Found",
-          type: "https://financial-ai.local/problems/not-found",
+          type: "https://almanac-fi.local/problems/not-found",
         }),
       );
   });

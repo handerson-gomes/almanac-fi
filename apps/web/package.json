@@ -1,5 +1,5 @@
 {
-  "name": "@financial-ai/web",
+  "name": "@almanac-fi/web",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -21,8 +21,8 @@
     "typecheck": "tsc --noEmit --project tsconfig.check.json"
   },
   "dependencies": {
-    "@financial-ai/api-contracts": "workspace:*",
-    "@financial-ai/core": "workspace:*",
+    "@almanac-fi/api-contracts": "workspace:*",
+    "@almanac-fi/core": "workspace:*",
     "@tanstack/react-query": "^5.101.2",
     "@tanstack/react-router": "^1.170.17",
     "react": "^19.2.7",

@@ -7,7 +7,7 @@ import { expect, test } from "vitest";
 import { createServer } from "./index.js";
 
 test("health, readiness, and OpenAPI are deterministic", async () => {
-  const dataHome = await mkdtemp(join(tmpdir(), "financial-ai-server-"));
+  const dataHome = await mkdtemp(join(tmpdir(), "almanac-fi-server-"));
   const app = await createServer({
     config: { dataHome, host: "127.0.0.1", logLevel: "error", port: 0 },
   });
@@ -26,7 +26,7 @@ test("health, readiness, and OpenAPI are deterministic", async () => {
 });
 
 test("errors are problem documents without stack traces", async () => {
-  const dataHome = await mkdtemp(join(tmpdir(), "financial-ai-server-"));
+  const dataHome = await mkdtemp(join(tmpdir(), "almanac-fi-server-"));
   const app = await createServer({
     config: { dataHome, host: "127.0.0.1", logLevel: "error", port: 0 },
   });
@@ -43,7 +43,7 @@ test("errors are problem documents without stack traces", async () => {
 });
 
 test("supports account, balance, and institution connection CRUD", async () => {
-  const dataHome = await mkdtemp(join(tmpdir(), "financial-ai-server-"));
+  const dataHome = await mkdtemp(join(tmpdir(), "almanac-fi-server-"));
   const app = await createServer({
     config: { dataHome, host: "127.0.0.1", logLevel: "error", port: 0 },
   });
@@ -130,7 +130,7 @@ test("supports account, balance, and institution connection CRUD", async () => {
 });
 
 test("previews and imports CSV rows idempotently with category rules", async () => {
-  const dataHome = await mkdtemp(join(tmpdir(), "financial-ai-server-"));
+  const dataHome = await mkdtemp(join(tmpdir(), "almanac-fi-server-"));
   const app = await createServer({
     config: { dataHome, host: "127.0.0.1", logLevel: "error", port: 0 },
   });

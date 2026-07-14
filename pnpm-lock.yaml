@@ -76,31 +76,31 @@ importers:
 
   apps/cli:
     dependencies:
-      "@financial-ai/core":
+      "@almanac-fi/core":
         specifier: workspace:*
         version: link:../../packages/core
 
   apps/mcp:
     dependencies:
-      "@financial-ai/core":
+      "@almanac-fi/core":
         specifier: workspace:*
         version: link:../../packages/core
 
   apps/server:
     dependencies:
-      "@financial-ai/api-contracts":
+      "@almanac-fi/api-contracts":
         specifier: workspace:*
         version: link:../../packages/api-contracts
-      "@financial-ai/config":
+      "@almanac-fi/config":
         specifier: workspace:*
         version: link:../../packages/config
-      "@financial-ai/core":
+      "@almanac-fi/core":
         specifier: workspace:*
         version: link:../../packages/core
-      "@financial-ai/db":
+      "@almanac-fi/db":
         specifier: workspace:*
         version: link:../../packages/db
-      "@financial-ai/telemetry":
+      "@almanac-fi/telemetry":
         specifier: workspace:*
         version: link:../../packages/telemetry
       fastify:
@@ -109,10 +109,10 @@ importers:
 
   apps/web:
     dependencies:
-      "@financial-ai/api-contracts":
+      "@almanac-fi/api-contracts":
         specifier: workspace:*
         version: link:../../packages/api-contracts
-      "@financial-ai/core":
+      "@almanac-fi/core":
         specifier: workspace:*
         version: link:../../packages/core
       "@tanstack/react-query":
@@ -130,7 +130,7 @@ importers:
 
   packages/api-contracts:
     dependencies:
-      "@financial-ai/core":
+      "@almanac-fi/core":
         specifier: workspace:*
         version: link:../core
       zod:
@@ -154,10 +154,10 @@ importers:
 
   packages/db:
     dependencies:
-      "@financial-ai/config":
+      "@almanac-fi/config":
         specifier: workspace:*
         version: link:../config
-      "@financial-ai/core":
+      "@almanac-fi/core":
         specifier: workspace:*
         version: link:../core
       better-sqlite3:
@@ -175,13 +175,13 @@ importers:
 
   packages/fixtures:
     dependencies:
-      "@financial-ai/db":
+      "@almanac-fi/db":
         specifier: workspace:*
         version: link:../db
 
   packages/secrets:
     dependencies:
-      "@financial-ai/db":
+      "@almanac-fi/db":
         specifier: workspace:*
         version: link:../db
       zod:

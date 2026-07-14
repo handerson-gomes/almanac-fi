@@ -1,5 +1,5 @@
 {
-  "name": "@financial-ai/server",
+  "name": "@almanac-fi/server",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -22,11 +22,11 @@
     "typecheck": "tsc --noEmit --project tsconfig.check.json"
   },
   "dependencies": {
-    "@financial-ai/api-contracts": "workspace:*",
-    "@financial-ai/config": "workspace:*",
-    "@financial-ai/core": "workspace:*",
-    "@financial-ai/db": "workspace:*",
-    "@financial-ai/telemetry": "workspace:*",
+    "@almanac-fi/api-contracts": "workspace:*",
+    "@almanac-fi/config": "workspace:*",
+    "@almanac-fi/core": "workspace:*",
+    "@almanac-fi/db": "workspace:*",
+    "@almanac-fi/telemetry": "workspace:*",
     "fastify": "^5.10.0"
   }
 }

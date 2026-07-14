@@ -82,4 +82,4 @@ export function serializeMoney(
   return { amount: value.amount, currency: value.currency };
 }
 
-export const corePackageName = "@financial-ai/core" as const;
+export const corePackageName = "@almanac-fi/core" as const;

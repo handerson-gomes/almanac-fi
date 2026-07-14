@@ -1,6 +1,8 @@
-# Local-First AI Financial Planner
+# Almanac FI
 
-This is a strict TypeScript, ESM-first pnpm workspace for a local-first financial planner. The workspace is intentionally a modular monolith: financial behavior belongs in reusable packages, while server, dashboard, CLI, and MCP delivery surfaces stay separate.
+> Track your money. Forecast your future. Build your FI.
+
+Almanac FI is a local-first workbench for tracking, forecasting, and (eventually) automating your path to FI. It is a strict TypeScript, ESM-first pnpm workspace organized as a modular monolith: financial behavior belongs in reusable packages, while server, dashboard, CLI, and MCP delivery surfaces stay separate.
 
 ## Prerequisites
 
@@ -34,7 +36,7 @@ packages/
   api-contracts/ validated API request, response, and problem contracts
 ```
 
-Each application declares its dependency on `@financial-ai/core` with the pnpm `workspace:*` protocol. Add all future internal dependencies with that protocol; do not reach into another package's source directory.
+Each application declares its dependency on `@almanac-fi/core` with the pnpm `workspace:*` protocol. Add all future internal dependencies with that protocol; do not reach into another package's source directory.
 
 ## Root commands
 

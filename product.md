@@ -1,8 +1,8 @@
-# Local-First AI Financial Planner
+# Almanac FI
 
 ## Product Vision
 
-This project is an open-source, local-first financial planning application and AI experimentation platform.
+Almanac FI is an open-source, local-first financial planning application and AI experimentation platform.
 
 It is designed for technically proficient users and contributors who want to:
 

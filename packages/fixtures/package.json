@@ -1,5 +1,5 @@
 {
-  "name": "@financial-ai/fixtures",
+  "name": "@almanac-fi/fixtures",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -17,6 +17,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@financial-ai/db": "workspace:*"
+    "@almanac-fi/db": "workspace:*"
   }
 }

@@ -7,15 +7,15 @@ import { parse } from "dotenv";
 import { z } from "zod";
 
 const environmentSchema = z.object({
-  FINANCIAL_AI_DATA_HOME: z.string().trim().min(1).optional(),
-  FINANCIAL_AI_HOST: z
+  ALMANAC_FI_DATA_HOME: z.string().trim().min(1).optional(),
+  ALMANAC_FI_HOST: z
     .string()
     .regex(/^\d{1,3}(?:\.\d{1,3}){3}$/, "Host must be an IPv4 address")
     .default("127.0.0.1"),
-  FINANCIAL_AI_LOG_LEVEL: z
+  ALMANAC_FI_LOG_LEVEL: z
     .enum(["debug", "info", "warn", "error"])
     .default("info"),
-  FINANCIAL_AI_PORT: z.coerce.number().int().min(1).max(65_535).default(4310),
+  ALMANAC_FI_PORT: z.coerce.number().int().min(1).max(65_535).default(4310),
 });
 
 export type AppConfig = Readonly<{
@@ -33,19 +33,19 @@ export type ConfigOptions = Readonly<{
 
 function defaultDataHome(env: NodeJS.ProcessEnv): string {
   if (platform() === "darwin") {
-    return join(homedir(), "Library", "Application Support", "financial-ai");
+    return join(homedir(), "Library", "Application Support", "almanac-fi");
   }
 
   if (platform() === "win32") {
     return join(
       env.APPDATA ?? join(homedir(), "AppData", "Roaming"),
-      "financial-ai",
+      "almanac-fi",
     );
   }
 
   return join(
     env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"),
-    "financial-ai",
+    "almanac-fi",
   );
 }
 
@@ -76,10 +76,10 @@ export function loadConfig(options: ConfigOptions = {}): AppConfig {
   const values = parseEnvironment(options);
 
   return Object.freeze({
-    dataHome: resolve(values.FINANCIAL_AI_DATA_HOME ?? defaultDataHome(env)),
-    host: values.FINANCIAL_AI_HOST,
-    logLevel: values.FINANCIAL_AI_LOG_LEVEL,
-    port: values.FINANCIAL_AI_PORT,
+    dataHome: resolve(values.ALMANAC_FI_DATA_HOME ?? defaultDataHome(env)),
+    host: values.ALMANAC_FI_HOST,
+    logLevel: values.ALMANAC_FI_LOG_LEVEL,
+    port: values.ALMANAC_FI_PORT,
   });
 }
 
@@ -102,7 +102,7 @@ export function startupDiagnostics(
 }
 
 export function databasePath(config: Pick<AppConfig, "dataHome">): string {
-  return join(config.dataHome, "financial-ai.sqlite");
+  return join(config.dataHome, "almanac-fi.sqlite");
 }
 
 export function configDirectory(config: Pick<AppConfig, "dataHome">): string {

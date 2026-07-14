@@ -20,7 +20,7 @@
     "target": "ES2024",
     "verbatimModuleSyntax": true,
     "paths": {
-      "@financial-ai/core": ["packages/core/src/index.ts"]
+      "@almanac-fi/core": ["packages/core/src/index.ts"]
     }
   }
 }

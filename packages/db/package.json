@@ -1,5 +1,5 @@
 {
-  "name": "@financial-ai/db",
+  "name": "@almanac-fi/db",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -21,8 +21,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@financial-ai/config": "workspace:*",
-    "@financial-ai/core": "workspace:*",
+    "@almanac-fi/config": "workspace:*",
+    "@almanac-fi/core": "workspace:*",
     "better-sqlite3": "^12.11.1",
     "drizzle-orm": "^0.45.2"
   }

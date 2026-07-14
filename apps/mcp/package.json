@@ -1,10 +1,10 @@
 {
-  "name": "@financial-ai/mcp",
+  "name": "@almanac-fi/mcp",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "bin": {
-    "financial-ai-mcp": "./dist/index.js"
+    "almanac-fi-mcp": "./dist/index.js"
   },
   "exports": {
     ".": {
@@ -25,6 +25,6 @@
     "typecheck": "tsc --noEmit --project tsconfig.check.json"
   },
   "dependencies": {
-    "@financial-ai/core": "workspace:*"
+    "@almanac-fi/core": "workspace:*"
   }
 }

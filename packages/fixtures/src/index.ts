@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
-import type { AppDatabase } from "@financial-ai/db";
-import { inUnitOfWork } from "@financial-ai/db/repositories";
+import type { AppDatabase } from "@almanac-fi/db";
+import { inUnitOfWork } from "@almanac-fi/db/repositories";
 
 export type SyntheticRecord = Readonly<{
   id: string;

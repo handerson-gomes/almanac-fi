@@ -17,12 +17,12 @@ function packageJson(id: string): string {
   return (
     JSON.stringify(
       {
-        name: `@financial-ai/${id}`,
+        name: `@almanac-fi/${id}`,
         private: true,
         scripts: { build: "tsc --build", typecheck: "tsc --noEmit" },
         type: "module",
         version: "0.0.0",
-        dependencies: { "@financial-ai/feature-sdk": "workspace:*" },
+        dependencies: { "@almanac-fi/feature-sdk": "workspace:*" },
       },
       null,
       2,
@@ -53,7 +53,7 @@ export async function createFeature(
     "src/calculation.ts":
       "export function calculate(input: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> { return input; }\n",
     "src/index.test.ts": `import { expect, test } from "vitest";\nimport { feature } from "./index.js";\ntest("registers ${options.id}", () => expect(feature.manifest.id).toBe("${options.id}"));\n`,
-    "src/index.ts": `import type { FeatureModule } from "@financial-ai/feature-sdk";\nimport { calculate } from "./calculation.js";\n\nexport const feature: FeatureModule = {\n  manifest: { apiVersion: "1", description: "${title} feature.", id: "${options.id}", name: "${title}", permissions: ["calculation:register", "dashboard:register", "mcp:register", "route:register"], version: "0.0.0" },\n  register(context) {\n    context.registerCalculation({ id: "${options.id}.calculate", run: calculate, version: "1" });\n    context.registerRoute({ id: "${options.id}.route", method: "GET", path: "/${options.id}" });\n    context.registerMcp({ description: "${title} capability", id: "${options.id}.mcp" });\n    context.registerDashboard({ id: "${options.id}.dashboard", path: "/${options.id}", title: "${title}" });\n  },\n};\n`,
+    "src/index.ts": `import type { FeatureModule } from "@almanac-fi/feature-sdk";\nimport { calculate } from "./calculation.js";\n\nexport const feature: FeatureModule = {\n  manifest: { apiVersion: "1", description: "${title} feature.", id: "${options.id}", name: "${title}", permissions: ["calculation:register", "dashboard:register", "mcp:register", "route:register"], version: "0.0.0" },\n  register(context) {\n    context.registerCalculation({ id: "${options.id}.calculate", run: calculate, version: "1" });\n    context.registerRoute({ id: "${options.id}.route", method: "GET", path: "/${options.id}" });\n    context.registerMcp({ description: "${title} capability", id: "${options.id}.mcp" });\n    context.registerDashboard({ id: "${options.id}.dashboard", path: "/${options.id}", title: "${title}" });\n  },\n};\n`,
     "src/mcp.ts":
       'export const mcpContribution = { description: "REPLACE capability", id: "REPLACE.mcp" };\n',
     "src/ui.ts":
@@ -71,9 +71,7 @@ export async function createFeature(
             declarationMap: true,
             outDir: "./dist",
             paths: {
-              "@financial-ai/feature-sdk": [
-                "packages/feature-sdk/src/index.ts",
-              ],
+              "@almanac-fi/feature-sdk": ["packages/feature-sdk/src/index.ts"],
             },
             rootDir: "../..",
             tsBuildInfoFile: "./dist/.tsbuildinfo",

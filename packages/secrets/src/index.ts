@@ -15,7 +15,7 @@ export interface SecretStore {
 }
 
 export function environmentVariableName(key: SecretKey): string {
-  return `FINANCIAL_AI_SECRET_${key.replaceAll("-", "_").toUpperCase()}`;
+  return `ALMANAC_FI_SECRET_${key.replaceAll("-", "_").toUpperCase()}`;
 }
 
 export class EnvironmentSecretStore implements SecretStore {
@@ -37,7 +37,7 @@ export class EnvironmentSecretStore implements SecretStore {
     configuredKeys: readonly SecretKey[];
     store: string;
   }> {
-    const prefix = "FINANCIAL_AI_SECRET_";
+    const prefix = "ALMANAC_FI_SECRET_";
     const configuredKeys = Object.keys(this.environment)
       .filter(
         (name) =>

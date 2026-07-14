@@ -1,6 +1,6 @@
 # Work Items Master List
 
-This is the dependency-ordered implementation backlog for the Local-First AI Financial Planner. Each item has its own directory and a requirements file. Work items are intentionally narrow enough for a coding agent to own; agents should preserve the architectural invariants in [product.md](../product.md) and [product_shared_forecast_addendum.md](../product_shared_forecast_addendum.md).
+This is the dependency-ordered implementation backlog for Almanac FI. Each item has its own directory and a requirements file. Work items are intentionally narrow enough for a coding agent to own; agents should preserve the architectural invariants in [product.md](../product.md) and [product_shared_forecast_addendum.md](../product_shared_forecast_addendum.md).
 
 ## Rules for implementation
 
