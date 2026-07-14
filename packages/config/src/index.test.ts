@@ -1,0 +1,39 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { describe, expect, test } from "vitest";
+
+import { ensureDataHome, loadConfig, startupDiagnostics } from "./index.js";
+
+describe("configuration", () => {
+  test("environment values override .env values", () => {
+    const config = loadConfig({
+      env: { FINANCIAL_AI_PORT: "4510" },
+      envFileContents: "FINANCIAL_AI_PORT=4511\nFINANCIAL_AI_LOG_LEVEL=debug",
+    });
+
+    expect(config.port).toBe(4510);
+    expect(config.logLevel).toBe("debug");
+  });
+
+  test("rejects an invalid port with an actionable error", () => {
+    expect(() =>
+      loadConfig({ env: { FINANCIAL_AI_PORT: "not-a-port" } }),
+    ).toThrow(/Invalid configuration: FINANCIAL_AI_PORT/);
+  });
+
+  test("creates a local data directory and keeps diagnostics secret-free", async () => {
+    const tempDirectory = await mkdtemp(join(tmpdir(), "financial-ai-config-"));
+    const dataHome = join(tempDirectory, "data");
+    const config = loadConfig({ env: { FINANCIAL_AI_DATA_HOME: dataHome } });
+
+    await expect(ensureDataHome(config)).resolves.toBe(dataHome);
+    expect(startupDiagnostics(config)).toEqual(
+      expect.objectContaining({ dataHome }),
+    );
+    expect(startupDiagnostics(config)).not.toHaveProperty("apiKey");
+
+    await rm(tempDirectory, { force: true, recursive: true });
+  });
+});

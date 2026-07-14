@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "jsx": "react-jsx",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"]
+  },
+  "include": [
+    "src/**/*",
+    "../../packages/core/src/**/*.ts",
+    "../../packages/api-contracts/src/**/*.ts"
+  ]
+}

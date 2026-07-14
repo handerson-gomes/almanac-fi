@@ -1,0 +1,17 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./packages/config" },
+    { "path": "./packages/db" },
+    { "path": "./packages/api-contracts" },
+    { "path": "./packages/feature-sdk" },
+    { "path": "./packages/fixtures" },
+    { "path": "./packages/telemetry" },
+    { "path": "./packages/secrets" },
+    { "path": "./apps/server" },
+    { "path": "./apps/web" },
+    { "path": "./apps/cli" },
+    { "path": "./apps/mcp" }
+  ]
+}

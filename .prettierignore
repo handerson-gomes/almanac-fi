@@ -1,0 +1,6 @@
+node_modules/
+dist/
+coverage/
+work-items/
+product.md
+product_shared_forecast_addendum.md
