@@ -518,4 +518,50 @@ describe("SQLite foundation", () => {
     });
     database.close();
   });
+
+  test("validates goals and resolves dated assumptions", () => {
+    const database = createDatabase();
+    database.migrate();
+    const unitOfWork = createUnitOfWork(database);
+    const household = unitOfWork.households.create({
+      currency: "USD",
+      name: "Plans",
+    });
+    const goal = {
+      accountId: null,
+      constraintLevel: "soft" as const,
+      currency: "USD",
+      dependentId: null,
+      fundingStrategy: "mixed" as const,
+      householdId: household.id,
+      name: "Emergency fund",
+      priorityTier: "important" as const,
+      status: "active" as const,
+      targetAmountMinor: 500_000,
+      targetDate: "2027-01-01",
+    };
+    expect(unitOfWork.goals.create(goal)).toMatchObject({
+      name: "Emergency fund",
+    });
+    expect(() =>
+      unitOfWork.goals.create({
+        ...goal,
+        constraintLevel: "hard",
+        priorityTier: "aspirational",
+      }),
+    ).toThrow(/Aspirational/);
+    unitOfWork.goals.createAssumption({
+      assumptionKey: "inflation",
+      confidence: 0.8,
+      effectiveFrom: "2026-01-01",
+      effectiveTo: "2027-01-01",
+      householdId: household.id,
+      source: "user",
+      value: 0.03,
+    });
+    expect(
+      unitOfWork.goals.listAssumptions(household.id, "2026-06-01"),
+    ).toEqual([expect.objectContaining({ value: 0.03 })]);
+    database.close();
+  });
 });

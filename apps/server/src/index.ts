@@ -27,11 +27,15 @@ import {
   createCategorySchema,
   createCsvMappingRecordSchema,
   createInstitutionConnectionSchema,
+  createFinancialGoalSchema,
+  createScenarioAssumptionSchema,
   csvImportResultSchema,
   csvMappingListSchema,
   csvMappingRecordSchema,
   csvPreviewRequestSchema,
   csvPreviewSchema,
+  financialGoalListSchema,
+  financialGoalSchema,
   entityIdSchema,
   healthResponseSchema,
   householdFactListSchema,
@@ -55,6 +59,8 @@ import {
   personSchema,
   problem,
   readinessResponseSchema,
+  scenarioAssumptionListSchema,
+  scenarioAssumptionSchema,
   transactionDetailsSchema,
   transactionFilterSchema,
   transactionListSchema,
@@ -606,6 +612,63 @@ export async function createServer(
     if (!unitOfWork.households.deleteFact(id))
       notFound("The household fact does not exist.");
     return reply.status(204).send();
+  });
+  app.get("/households/:id/goals", async (request) => {
+    const householdId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    return financialGoalListSchema.parse({
+      items: unitOfWork.goals.list(householdId),
+    });
+  });
+  app.post("/households/:id/goals", async (request, reply) => {
+    const householdId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const input = parseRequest(createFinancialGoalSchema, request.body);
+    try {
+      return reply
+        .status(201)
+        .send(
+          financialGoalSchema.parse(
+            unitOfWork.goals.create({ ...input, householdId }),
+          ),
+        );
+    } catch (error) {
+      if (error instanceof Error) badRequest(error.message);
+      throw error;
+    }
+  });
+  app.get("/households/:id/assumptions", async (request) => {
+    const householdId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const { asOf } = parseRequest(householdAsOfQuerySchema, request.query);
+    return scenarioAssumptionListSchema.parse({
+      items: unitOfWork.goals.listAssumptions(householdId, asOf),
+    });
+  });
+  app.post("/households/:id/assumptions", async (request, reply) => {
+    const householdId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const input = parseRequest(createScenarioAssumptionSchema, request.body);
+    try {
+      return reply
+        .status(201)
+        .send(
+          scenarioAssumptionSchema.parse(
+            unitOfWork.goals.createAssumption({ ...input, householdId }),
+          ),
+        );
+    } catch (error) {
+      if (error instanceof Error) badRequest(error.message);
+      throw error;
+    }
   });
   app.post("/csv-imports/preview", async (request) => {
     const input = parseRequest(csvPreviewRequestSchema, request.body);

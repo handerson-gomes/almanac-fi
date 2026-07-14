@@ -529,6 +529,80 @@ export type Person = z.infer<typeof personSchema>;
 export type HouseholdFact = z.infer<typeof householdFactSchema>;
 export type CreateHouseholdFact = z.input<typeof createHouseholdFactSchema>;
 
+export const financialGoalSchema = z.object({
+  accountId: entityIdSchema.nullable(),
+  constraintLevel: z.enum(["hard", "soft"]),
+  createdAt: z.iso.datetime(),
+  currency: currencySchema,
+  dependentId: entityIdSchema.nullable(),
+  fundingStrategy: z.enum(["cash", "investments", "mixed"]),
+  householdId: entityIdSchema,
+  id: entityIdSchema,
+  name: z.string().trim().min(1).max(200),
+  priorityTier: z.enum(["aspirational", "essential", "important"]),
+  status: z.enum(["active", "completed", "paused"]),
+  targetAmountMinor: z.number().int().nonnegative(),
+  targetDate: z.iso.date(),
+  updatedAt: z.iso.datetime(),
+});
+export const createFinancialGoalSchema = financialGoalSchema
+  .pick({
+    accountId: true,
+    constraintLevel: true,
+    currency: true,
+    dependentId: true,
+    fundingStrategy: true,
+    name: true,
+    priorityTier: true,
+    status: true,
+    targetAmountMinor: true,
+    targetDate: true,
+  })
+  .partial({ accountId: true, dependentId: true, status: true })
+  .extend({
+    accountId: entityIdSchema.nullable().default(null),
+    dependentId: entityIdSchema.nullable().default(null),
+    status: z.enum(["active", "completed", "paused"]).default("active"),
+  })
+  .refine(
+    (goal) =>
+      !(
+        goal.priorityTier === "aspirational" && goal.constraintLevel === "hard"
+      ),
+    "Aspirational goals cannot be hard constraints",
+  );
+export const financialGoalListSchema = z.object({
+  items: z.array(financialGoalSchema),
+});
+export const scenarioAssumptionSchema = z.object({
+  assumptionKey: z.string().trim().min(1).max(100),
+  confidence: z.number().min(0).max(1),
+  createdAt: z.iso.datetime(),
+  effectiveFrom: z.iso.date(),
+  effectiveTo: z.iso.date().nullable(),
+  householdId: entityIdSchema,
+  id: entityIdSchema,
+  source: z.string().trim().min(1).max(200),
+  updatedAt: z.iso.datetime(),
+  value: z.union([z.boolean(), z.number(), z.string()]),
+});
+export const createScenarioAssumptionSchema = scenarioAssumptionSchema
+  .pick({
+    assumptionKey: true,
+    confidence: true,
+    effectiveFrom: true,
+    effectiveTo: true,
+    source: true,
+    value: true,
+  })
+  .partial({ effectiveTo: true })
+  .extend({ effectiveTo: z.iso.date().nullable().default(null) });
+export const scenarioAssumptionListSchema = z.object({
+  items: z.array(scenarioAssumptionSchema),
+});
+export type FinancialGoal = z.infer<typeof financialGoalSchema>;
+export type ScenarioAssumption = z.infer<typeof scenarioAssumptionSchema>;
+
 export const problemSchema = z.object({
   detail: z.string(),
   instance: z.string().optional(),

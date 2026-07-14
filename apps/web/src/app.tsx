@@ -23,6 +23,8 @@ import {
   createCategory,
   createHousehold,
   createHouseholdFact,
+  createFinancialGoal,
+  createScenarioAssumption,
   createPerson,
   createCsvMapping,
   createAccount,
@@ -33,6 +35,8 @@ import {
   getHealth,
   getHouseholdFacts,
   getHouseholds,
+  getFinancialGoals,
+  getScenarioAssumptions,
   getPeople,
   getTransaction,
   getTransactions,
@@ -57,6 +61,7 @@ function Layout(): React.JSX.Element {
           <Link to="/transactions">Transactions</Link>
           <Link to="/categories">Categories</Link>
           <Link to="/profile">Household</Link>
+          <Link to="/planning">Planning</Link>
           <Link to="/import">Import CSV</Link>
         </nav>
       </header>
@@ -1036,6 +1041,131 @@ function HouseholdProfile(): React.JSX.Element {
   );
 }
 
+function Planning(): React.JSX.Element {
+  const queryClient = useQueryClient();
+  const households = useQuery({
+    queryFn: getHouseholds,
+    queryKey: ["households"],
+  });
+  const household = households.data?.[0];
+  const goals = useQuery({
+    enabled: household !== undefined,
+    queryFn: () => getFinancialGoals(household?.id ?? ""),
+    queryKey: ["goals", household?.id],
+  });
+  const assumptions = useQuery({
+    enabled: household !== undefined,
+    queryFn: () => getScenarioAssumptions(household?.id ?? ""),
+    queryKey: ["assumptions", household?.id],
+  });
+  const [goalName, setGoalName] = useState("");
+  const [assumptionKey, setAssumptionKey] = useState("");
+  const [assumptionValue, setAssumptionValue] = useState("");
+  const today = new Date().toISOString().slice(0, 10);
+  const addGoal = useMutation({
+    mutationFn: () =>
+      createFinancialGoal(household?.id ?? "", {
+        constraintLevel: "soft",
+        currency: household?.currency ?? "USD",
+        fundingStrategy: "mixed",
+        name: goalName,
+        priorityTier: "important",
+        targetAmountMinor: 100_000,
+        targetDate: `${new Date().getUTCFullYear() + 1}-12-31`,
+      }),
+    onSuccess: async () => {
+      setGoalName("");
+      await queryClient.invalidateQueries({
+        queryKey: ["goals", household?.id],
+      });
+    },
+  });
+  const addAssumption = useMutation({
+    mutationFn: () =>
+      createScenarioAssumption(household?.id ?? "", {
+        assumptionKey,
+        confidence: 1,
+        effectiveFrom: today,
+        source: "user",
+        value: assumptionValue,
+      }),
+    onSuccess: async () => {
+      setAssumptionKey("");
+      setAssumptionValue("");
+      await queryClient.invalidateQueries({
+        queryKey: ["assumptions", household?.id],
+      });
+    },
+  });
+  if (!household)
+    return (
+      <section className="page">
+        <h2>Planning assumptions</h2>
+        <p>Create a household profile first.</p>
+      </section>
+    );
+  return (
+    <section aria-labelledby="planning-heading" className="page">
+      <h2 id="planning-heading">Planning assumptions</h2>
+      <form
+        className="stacked-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          addGoal.mutate();
+        }}
+      >
+        <label htmlFor="goal-name">Goal name</label>
+        <input
+          id="goal-name"
+          required
+          value={goalName}
+          onChange={(event) => setGoalName(event.target.value)}
+        />
+        <button type="submit">Add goal</button>
+      </form>
+      <ul aria-label="Financial goals">
+        {goals.data?.map((goal) => (
+          <li key={goal.id}>
+            {goal.name} — {formatMinorUnits(goal.targetAmountMinor)}{" "}
+            {goal.currency} by {goal.targetDate}
+          </li>
+        ))}
+      </ul>
+      <form
+        className="stacked-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          addAssumption.mutate();
+        }}
+      >
+        <label htmlFor="assumption-key">Assumption</label>
+        <input
+          id="assumption-key"
+          required
+          value={assumptionKey}
+          onChange={(event) => setAssumptionKey(event.target.value)}
+        />
+        <label htmlFor="assumption-value">Assumed value</label>
+        <input
+          id="assumption-value"
+          required
+          value={assumptionValue}
+          onChange={(event) => setAssumptionValue(event.target.value)}
+        />
+        <button type="submit">Add assumption</button>
+      </form>
+      <ul aria-label="Scenario assumptions">
+        {assumptions.data?.map((assumption) => (
+          <li key={assumption.id}>
+            {assumption.assumptionKey}: {String(assumption.value)} · source{" "}
+            {assumption.source}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function NotFound(): React.JSX.Element {
   return <p role="alert">That page does not exist.</p>;
 }
@@ -1071,6 +1201,11 @@ const profileRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/profile",
 });
+const planningRoute = createRoute({
+  component: Planning,
+  getParentRoute: () => rootRoute,
+  path: "/planning",
+});
 export const appRouter = createRouter({
   defaultNotFoundComponent: NotFound,
   routeTree: rootRoute.addChildren([
@@ -1080,6 +1215,7 @@ export const appRouter = createRouter({
     categoriesRoute,
     csvImportRoute,
     profileRoute,
+    planningRoute,
   ]),
 });
 const queryClient = new QueryClient();

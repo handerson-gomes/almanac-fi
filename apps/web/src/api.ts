@@ -16,6 +16,12 @@ import {
   householdFactSchema,
   householdListSchema,
   householdSchema,
+  financialGoalListSchema,
+  financialGoalSchema,
+  scenarioAssumptionListSchema,
+  scenarioAssumptionSchema,
+  type FinancialGoal,
+  type ScenarioAssumption,
   personListSchema,
   personSchema,
   type Household,
@@ -51,6 +57,8 @@ export type {
   Household,
   HouseholdFact,
   Person,
+  FinancialGoal,
+  ScenarioAssumption,
 };
 
 export type TransactionPage = Readonly<{
@@ -252,6 +260,57 @@ export async function createHouseholdFact(
 ): Promise<HouseholdFact> {
   return householdFactSchema.parse(
     await requestJson(`/api/households/${householdId}/facts`, {
+      body: JSON.stringify(input),
+      method: "POST",
+    }),
+  );
+}
+
+export async function getFinancialGoals(
+  householdId: string,
+): Promise<readonly FinancialGoal[]> {
+  return financialGoalListSchema.parse(
+    await requestJson(`/api/households/${householdId}/goals`),
+  ).items;
+}
+export async function createFinancialGoal(
+  householdId: string,
+  input: Readonly<{
+    constraintLevel: "hard" | "soft";
+    currency: string;
+    fundingStrategy: "cash" | "investments" | "mixed";
+    name: string;
+    priorityTier: "aspirational" | "essential" | "important";
+    targetAmountMinor: number;
+    targetDate: string;
+  }>,
+): Promise<FinancialGoal> {
+  return financialGoalSchema.parse(
+    await requestJson(`/api/households/${householdId}/goals`, {
+      body: JSON.stringify(input),
+      method: "POST",
+    }),
+  );
+}
+export async function getScenarioAssumptions(
+  householdId: string,
+): Promise<readonly ScenarioAssumption[]> {
+  return scenarioAssumptionListSchema.parse(
+    await requestJson(`/api/households/${householdId}/assumptions`),
+  ).items;
+}
+export async function createScenarioAssumption(
+  householdId: string,
+  input: Readonly<{
+    assumptionKey: string;
+    confidence: number;
+    effectiveFrom: string;
+    source: string;
+    value: string;
+  }>,
+): Promise<ScenarioAssumption> {
+  return scenarioAssumptionSchema.parse(
+    await requestJson(`/api/households/${householdId}/assumptions`, {
       body: JSON.stringify(input),
       method: "POST",
     }),

@@ -22,4 +22,8 @@ Run goal/assumption validation and UI tests.
 
 ## Status
 
-Not started
+Complete
+
+## User experience impact
+
+Users can define dated financial goals with explicit amounts, currencies, priorities, funding constraints, and optional account or dependent links. They can also maintain source-tagged assumptions over time, so planning views use the values that apply to a chosen date without overwriting history.

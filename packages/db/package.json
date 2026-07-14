@@ -16,6 +16,10 @@
     "./households": {
       "types": "./dist/households.d.ts",
       "import": "./dist/households.js"
+    },
+    "./goals": {
+      "types": "./dist/goals.d.ts",
+      "import": "./dist/goals.js"
     }
   },
   "main": "./dist/index.js",

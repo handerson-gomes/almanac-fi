@@ -15,6 +15,7 @@ import {
   createHouseholdRepository,
   type HouseholdRepository,
 } from "./households.js";
+import { createGoalRepository, type GoalRepository } from "./goals.js";
 
 export type Page<T> = Readonly<{ items: readonly T[]; nextCursor?: string }>;
 export type PageRequest = Readonly<{
@@ -408,6 +409,7 @@ export interface UnitOfWork {
   readonly institutionConnections: InstitutionConnectionRepository;
   readonly incomeClassifications: IncomeClassificationRepository;
   readonly households: HouseholdRepository;
+  readonly goals: GoalRepository;
   readonly sourceRecords: SourceRecordRepository;
   readonly transactions: TransactionRepository;
   readonly transferMatches: TransferMatchRepository;
@@ -1544,6 +1546,9 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
   const households = createHouseholdRepository(database, (input) => {
     auditEvents.append({ ...input, sourceRecordId: null });
   });
+  const goals = createGoalRepository(database, (input) => {
+    auditEvents.append({ ...input, sourceRecordId: null });
+  });
   return Object.freeze({
     accounts,
     auditEvents,
@@ -1555,6 +1560,7 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
     institutionConnections,
     incomeClassifications,
     households,
+    goals,
     sourceRecords,
     transactions,
     transferMatches,

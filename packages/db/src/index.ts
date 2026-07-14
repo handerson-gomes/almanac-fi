@@ -206,6 +206,31 @@ const migrations = [
     down: `DROP INDEX IF EXISTS household_facts_resolution; DROP TABLE IF EXISTS household_facts;
       DROP TABLE IF EXISTS dependents; DROP TABLE IF EXISTS people; DROP TABLE IF EXISTS households;`,
   },
+  {
+    id: "0008_goals_and_assumptions",
+    up: `
+      CREATE TABLE IF NOT EXISTS financial_goals (
+        id TEXT PRIMARY KEY, household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+        name TEXT NOT NULL, target_amount_minor INTEGER NOT NULL CHECK(target_amount_minor >= 0), currency TEXT NOT NULL,
+        target_date TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('active', 'completed', 'paused')),
+        priority_tier TEXT NOT NULL CHECK(priority_tier IN ('aspirational', 'essential', 'important')),
+        constraint_level TEXT NOT NULL CHECK(constraint_level IN ('hard', 'soft')),
+        funding_strategy TEXT NOT NULL CHECK(funding_strategy IN ('cash', 'investments', 'mixed')),
+        dependent_id TEXT REFERENCES people(id), account_id TEXT REFERENCES accounts(id),
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        CHECK(NOT(priority_tier = 'aspirational' AND constraint_level = 'hard'))
+      );
+      CREATE TABLE IF NOT EXISTS scenario_assumptions (
+        id TEXT PRIMARY KEY, household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+        assumption_key TEXT NOT NULL, value_json TEXT NOT NULL, effective_from TEXT NOT NULL, effective_to TEXT,
+        source TEXT NOT NULL, confidence REAL NOT NULL CHECK(confidence >= 0 AND confidence <= 1),
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        CHECK(effective_to IS NULL OR effective_to > effective_from)
+      );
+      CREATE INDEX IF NOT EXISTS scenario_assumptions_resolution ON scenario_assumptions(household_id, assumption_key, effective_from, effective_to);
+    `,
+    down: `DROP INDEX IF EXISTS scenario_assumptions_resolution; DROP TABLE IF EXISTS scenario_assumptions; DROP TABLE IF EXISTS financial_goals;`,
+  },
 ] as const;
 
 export type AppDatabase = Readonly<{
