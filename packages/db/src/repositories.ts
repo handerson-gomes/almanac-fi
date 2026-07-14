@@ -24,6 +24,7 @@ import {
   createObligationRepository,
   type ObligationRepository,
 } from "./obligations.js";
+import { createBudgetRepository, type BudgetRepository } from "./budgets.js";
 
 export type Page<T> = Readonly<{ items: readonly T[]; nextCursor?: string }>;
 export type PageRequest = Readonly<{
@@ -407,6 +408,7 @@ export interface IncomeClassificationRepository {
 }
 
 export interface UnitOfWork {
+  readonly budgets: BudgetRepository;
   readonly accounts: AccountRepository;
   readonly auditEvents: AuditEventRepository;
   readonly categories: CategoryRepository;
@@ -1565,8 +1567,12 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
   const obligations = createObligationRepository(database, (input) => {
     auditEvents.append({ ...input, sourceRecordId: null });
   });
+  const budgets = createBudgetRepository(database, (input) => {
+    auditEvents.append({ ...input, sourceRecordId: null });
+  });
   return Object.freeze({
     accounts,
+    budgets,
     auditEvents,
     categories,
     categorizationRules,

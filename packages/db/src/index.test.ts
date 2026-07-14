@@ -738,4 +738,54 @@ describe("SQLite foundation", () => {
     ).toThrow(/exceed/);
     database.close();
   });
+
+  test("manages and deterministically clones audited budget targets", () => {
+    const database = createDatabase();
+    database.migrate();
+    const unitOfWork = createUnitOfWork(database);
+    const category = unitOfWork.categories.create({
+      name: "Food",
+      parentId: null,
+      status: "active",
+    });
+    const budget = unitOfWork.budgets.create({
+      currency: "USD",
+      householdId: null,
+      name: "Monthly",
+      status: "active",
+    });
+    const period = unitOfWork.budgets.createPeriod({
+      budgetId: budget.id,
+      dateFrom: "2026-07-01T00:00:00.000Z",
+      dateTo: "2026-07-31T23:59:59.999Z",
+      status: "active",
+    });
+    unitOfWork.budgets.setLine(period.id, category.id, 50_000);
+    unitOfWork.budgets.setLine(period.id, category.id, 55_000);
+    expect(() =>
+      unitOfWork.budgets.createPeriod({
+        budgetId: budget.id,
+        dateFrom: period.dateFrom,
+        dateTo: period.dateTo,
+        status: "active",
+      }),
+    ).toThrow(/already exists/);
+    const clone = unitOfWork.budgets.clonePeriod(period.id, {
+      dateFrom: "2026-08-01T00:00:00.000Z",
+      dateTo: "2026-08-31T23:59:59.999Z",
+      status: "draft",
+    });
+    expect(clone.lines).toEqual([
+      expect.objectContaining({
+        categoryId: category.id,
+        targetAmountMinor: 55_000,
+      }),
+    ]);
+    expect(
+      unitOfWork.auditEvents
+        .list({ limit: 100 })
+        .items.filter((event) => event.entityType === "budget_line"),
+    ).toHaveLength(3);
+    database.close();
+  });
 });

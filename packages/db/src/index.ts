@@ -289,6 +289,27 @@ const migrations = [
     down: `DROP INDEX IF EXISTS liability_terms_resolution; DROP TABLE IF EXISTS liability_scenario_overrides;
       DROP TABLE IF EXISTS recurring_obligations; DROP TABLE IF EXISTS liability_terms; DROP TABLE IF EXISTS liabilities;`,
   },
+  {
+    id: "0011_budgets",
+    up: `
+      CREATE TABLE IF NOT EXISTS budgets (
+        id TEXT PRIMARY KEY, household_id TEXT REFERENCES households(id), name TEXT NOT NULL, currency TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('active', 'archived')), created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS budget_periods (
+        id TEXT PRIMARY KEY, budget_id TEXT NOT NULL REFERENCES budgets(id) ON DELETE CASCADE,
+        date_from TEXT NOT NULL, date_to TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('active', 'draft')),
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL, CHECK(date_to >= date_from)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS budget_periods_active_unique ON budget_periods(budget_id, date_from, date_to) WHERE status = 'active';
+      CREATE TABLE IF NOT EXISTS budget_lines (
+        id TEXT PRIMARY KEY, period_id TEXT NOT NULL REFERENCES budget_periods(id) ON DELETE CASCADE,
+        category_id TEXT NOT NULL REFERENCES categories(id), target_amount_minor INTEGER NOT NULL CHECK(target_amount_minor >= 0),
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(period_id, category_id)
+      );
+    `,
+    down: `DROP TABLE IF EXISTS budget_lines; DROP INDEX IF EXISTS budget_periods_active_unique; DROP TABLE IF EXISTS budget_periods; DROP TABLE IF EXISTS budgets;`,
+  },
 ] as const;
 
 export type AppDatabase = Readonly<{

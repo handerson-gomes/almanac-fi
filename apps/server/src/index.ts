@@ -14,6 +14,12 @@ import {
   accountSchema,
   budgetCalculationRequestSchema,
   budgetCalculationSchema,
+  budgetLineSchema,
+  budgetListSchema,
+  budgetPeriodDetailsSchema,
+  budgetPeriodListSchema,
+  budgetPeriodSchema,
+  budgetSchema,
   categorizationRuleListSchema,
   categorizationRuleSchema,
   categorizationBatchRequestSchema,
@@ -25,6 +31,8 @@ import {
   categorySchema,
   createAccountBalanceSchema,
   createAccountSchema,
+  createBudgetPeriodSchema,
+  createBudgetSchema,
   createCategorizationRuleSchema,
   createCategorySchema,
   createCsvMappingRecordSchema,
@@ -83,6 +91,7 @@ import {
   scenarioAssumptionSchema,
   securityListSchema,
   securitySchema,
+  setBudgetLineSchema,
   transactionDetailsSchema,
   transactionFilterSchema,
   transactionListSchema,
@@ -882,6 +891,94 @@ export async function createServer(
         now(),
       );
     return budgetCalculationSchema.parse(result);
+  });
+  app.get("/budgets", async () =>
+    budgetListSchema.parse({ items: unitOfWork.budgets.list() }),
+  );
+  app.post("/budgets", async (request, reply) =>
+    reply
+      .status(201)
+      .send(
+        budgetSchema.parse(
+          unitOfWork.budgets.create(
+            parseRequest(createBudgetSchema, request.body),
+          ),
+        ),
+      ),
+  );
+  app.get("/budgets/:id/periods", async (request) => {
+    const budgetId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    return budgetPeriodListSchema.parse({
+      items: unitOfWork.budgets.listPeriods(budgetId),
+    });
+  });
+  app.post("/budgets/:id/periods", async (request, reply) => {
+    const budgetId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    try {
+      return reply
+        .status(201)
+        .send(
+          budgetPeriodSchema.parse(
+            unitOfWork.budgets.createPeriod({
+              ...parseRequest(createBudgetPeriodSchema, request.body),
+              budgetId,
+            }),
+          ),
+        );
+    } catch (error) {
+      if (error instanceof Error) badRequest(error.message);
+      throw error;
+    }
+  });
+  app.get("/budget-periods/:id", async (request) => {
+    const id = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const details = unitOfWork.budgets.findPeriod(id);
+    if (!details) notFound("The budget period does not exist.");
+    return budgetPeriodDetailsSchema.parse(details);
+  });
+  app.put("/budget-periods/:id/lines", async (request) => {
+    const periodId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const input = parseRequest(setBudgetLineSchema, request.body);
+    return budgetLineSchema.parse(
+      unitOfWork.budgets.setLine(
+        periodId,
+        input.categoryId,
+        input.targetAmountMinor,
+      ),
+    );
+  });
+  app.post("/budget-periods/:id/clone", async (request, reply) => {
+    const sourcePeriodId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    try {
+      return reply
+        .status(201)
+        .send(
+          budgetPeriodDetailsSchema.parse(
+            unitOfWork.budgets.clonePeriod(
+              sourcePeriodId,
+              parseRequest(createBudgetPeriodSchema, request.body),
+            ),
+          ),
+        );
+    } catch (error) {
+      if (error instanceof Error) badRequest(error.message);
+      throw error;
+    }
   });
   app.post("/csv-imports/preview", async (request) => {
     const input = parseRequest(csvPreviewRequestSchema, request.body);

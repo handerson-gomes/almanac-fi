@@ -22,4 +22,8 @@ Run budget CRUD, cloning, and audit integration tests.
 
 ## Status
 
-Not started
+Complete
+
+## User experience impact
+
+Users can create reusable budgets, define draft or active monthly periods, and set category targets in schemas that feed directly into budget calculations. They can clone a prior period to start the next month, while duplicate active periods are prevented and every target change is auditable.

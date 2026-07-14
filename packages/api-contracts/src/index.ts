@@ -847,6 +847,57 @@ export const budgetCalculationSchema = z.object({
 });
 export type BudgetCalculation = z.infer<typeof budgetCalculationSchema>;
 
+export const budgetSchema = z.object({
+  createdAt: z.iso.datetime(),
+  currency: currencySchema,
+  householdId: entityIdSchema.nullable(),
+  id: entityIdSchema,
+  name: z.string().min(1),
+  status: z.enum(["active", "archived"]),
+  updatedAt: z.iso.datetime(),
+});
+export const createBudgetSchema = budgetSchema
+  .pick({ currency: true, householdId: true, name: true, status: true })
+  .partial({ householdId: true, status: true })
+  .extend({
+    householdId: entityIdSchema.nullable().default(null),
+    status: z.enum(["active", "archived"]).default("active"),
+  });
+export const budgetListSchema = z.object({ items: z.array(budgetSchema) });
+export const budgetPeriodSchema = z.object({
+  budgetId: entityIdSchema,
+  createdAt: z.iso.datetime(),
+  dateFrom: z.iso.datetime(),
+  dateTo: z.iso.datetime(),
+  id: entityIdSchema,
+  status: z.enum(["active", "draft"]),
+  updatedAt: z.iso.datetime(),
+});
+export const createBudgetPeriodSchema = budgetPeriodSchema
+  .pick({ dateFrom: true, dateTo: true, status: true })
+  .partial({ status: true })
+  .extend({ status: z.enum(["active", "draft"]).default("draft") });
+export const budgetPeriodListSchema = z.object({
+  items: z.array(budgetPeriodSchema),
+});
+export const budgetLineSchema = z.object({
+  categoryId: entityIdSchema,
+  createdAt: z.iso.datetime(),
+  id: entityIdSchema,
+  periodId: entityIdSchema,
+  targetAmountMinor: z.number().int().nonnegative(),
+  updatedAt: z.iso.datetime(),
+});
+export const setBudgetLineSchema = budgetLineSchema.pick({
+  categoryId: true,
+  targetAmountMinor: true,
+});
+export const budgetPeriodDetailsSchema = z.object({
+  budget: budgetSchema,
+  lines: z.array(budgetLineSchema),
+  period: budgetPeriodSchema,
+});
+
 export const problemSchema = z.object({
   detail: z.string(),
   instance: z.string().optional(),

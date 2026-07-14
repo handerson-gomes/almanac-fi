@@ -28,6 +28,10 @@
     "./obligations": {
       "types": "./dist/obligations.d.ts",
       "import": "./dist/obligations.js"
+    },
+    "./budgets": {
+      "types": "./dist/budgets.d.ts",
+      "import": "./dist/budgets.js"
     }
   },
   "main": "./dist/index.js",
