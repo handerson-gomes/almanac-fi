@@ -22,4 +22,8 @@ Run migration, holding valuation, provenance, and retirement-input fixture tests
 
 ## Status
 
-Not started
+Complete
+
+## User experience impact
+
+Users can maintain investment securities, dated holdings, and investment activity for their accounts, including quantities, prices, values, and cost basis when known. Planning tools can read a reconciled current asset total and clearly identify holdings that cannot be valued instead of silently inventing missing data.

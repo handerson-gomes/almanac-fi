@@ -28,6 +28,9 @@ import {
   createCsvMappingRecordSchema,
   createInstitutionConnectionSchema,
   createFinancialGoalSchema,
+  createHoldingSchema,
+  createInvestmentTransactionSchema,
+  createSecuritySchema,
   createScenarioAssumptionSchema,
   csvImportResultSchema,
   csvMappingListSchema,
@@ -38,6 +41,8 @@ import {
   financialGoalSchema,
   entityIdSchema,
   healthResponseSchema,
+  holdingListSchema,
+  holdingSchema,
   householdFactListSchema,
   householdFactSchema,
   householdAsOfQuerySchema,
@@ -53,6 +58,9 @@ import {
   incomeClassificationStatusSchema,
   incomeConfirmationSchema,
   incomeSummarySchema,
+  investmentTransactionListSchema,
+  investmentTransactionSchema,
+  investmentValuationSchema,
   openApiDocument,
   paginationQuerySchema,
   personListSchema,
@@ -61,6 +69,8 @@ import {
   readinessResponseSchema,
   scenarioAssumptionListSchema,
   scenarioAssumptionSchema,
+  securityListSchema,
+  securitySchema,
   transactionDetailsSchema,
   transactionFilterSchema,
   transactionListSchema,
@@ -74,6 +84,7 @@ import {
   updateCategorySchema,
   updateInstitutionConnectionSchema,
   updateHouseholdSchema,
+  updateHoldingSchema,
 } from "@almanac-fi/api-contracts";
 import { createDatabase, type AppDatabase } from "@almanac-fi/db";
 import { createUnitOfWork, inUnitOfWork } from "@almanac-fi/db/repositories";
@@ -670,6 +681,86 @@ export async function createServer(
       throw error;
     }
   });
+  app.get("/securities", async () =>
+    securityListSchema.parse({
+      items: unitOfWork.investments.listSecurities(),
+    }),
+  );
+  app.post("/securities", async (request, reply) =>
+    reply
+      .status(201)
+      .send(
+        securitySchema.parse(
+          unitOfWork.investments.createSecurity(
+            parseRequest(createSecuritySchema, request.body),
+          ),
+        ),
+      ),
+  );
+  app.get("/holdings", async (request) =>
+    holdingListSchema.parse({
+      items: unitOfWork.investments.listHoldings(
+        (request.query as { accountId?: string }).accountId,
+      ),
+    }),
+  );
+  app.post("/holdings", async (request, reply) =>
+    reply
+      .status(201)
+      .send(
+        holdingSchema.parse(
+          unitOfWork.investments.createHolding(
+            parseRequest(createHoldingSchema, request.body),
+          ),
+        ),
+      ),
+  );
+  app.patch("/holdings/:id", async (request) => {
+    const id = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const holding = unitOfWork.investments.updateHolding(
+      id,
+      parseRequest(updateHoldingSchema, request.body),
+    );
+    if (!holding) notFound("The holding does not exist.");
+    return holdingSchema.parse(holding);
+  });
+  app.delete("/holdings/:id", async (request, reply) => {
+    const id = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    if (!unitOfWork.investments.deleteHolding(id))
+      notFound("The holding does not exist.");
+    return reply.status(204).send();
+  });
+  app.get("/investment-transactions", async (request) =>
+    investmentTransactionListSchema.parse({
+      items: unitOfWork.investments.listTransactions(
+        (request.query as { accountId?: string }).accountId,
+      ),
+    }),
+  );
+  app.post("/investment-transactions", async (request, reply) =>
+    reply
+      .status(201)
+      .send(
+        investmentTransactionSchema.parse(
+          unitOfWork.investments.createTransaction(
+            parseRequest(createInvestmentTransactionSchema, request.body),
+          ),
+        ),
+      ),
+  );
+  app.get("/investment-valuation", async (request) =>
+    investmentValuationSchema.parse(
+      unitOfWork.investments.currentValuation(
+        (request.query as { accountId?: string }).accountId,
+      ),
+    ),
+  );
   app.post("/csv-imports/preview", async (request) => {
     const input = parseRequest(csvPreviewRequestSchema, request.body);
     if (!unitOfWork.accounts.findById(input.accountId))

@@ -231,6 +231,32 @@ const migrations = [
     `,
     down: `DROP INDEX IF EXISTS scenario_assumptions_resolution; DROP TABLE IF EXISTS scenario_assumptions; DROP TABLE IF EXISTS financial_goals;`,
   },
+  {
+    id: "0009_investments",
+    up: `
+      CREATE TABLE IF NOT EXISTS securities (
+        id TEXT PRIMARY KEY, symbol TEXT, name TEXT NOT NULL, security_type TEXT NOT NULL CHECK(security_type IN ('cash', 'etf', 'fund', 'stock', 'other')),
+        currency TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS holdings (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), security_id TEXT NOT NULL REFERENCES securities(id),
+        as_of TEXT NOT NULL, quantity REAL, price_minor INTEGER, market_value_minor INTEGER, cost_basis_minor INTEGER,
+        source TEXT NOT NULL, source_record_id TEXT REFERENCES source_records(id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        CHECK(quantity IS NULL OR quantity >= 0), CHECK(price_minor IS NULL OR price_minor >= 0),
+        UNIQUE(account_id, security_id, as_of)
+      );
+      CREATE TABLE IF NOT EXISTS investment_transactions (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), security_id TEXT REFERENCES securities(id),
+        transaction_date TEXT NOT NULL, transaction_type TEXT NOT NULL CHECK(transaction_type IN ('buy', 'contribution', 'dividend', 'fee', 'sell', 'withdrawal')),
+        cash_amount_minor INTEGER, quantity REAL, price_minor INTEGER, cost_basis_minor INTEGER,
+        source TEXT NOT NULL, source_record_id TEXT REFERENCES source_records(id), created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS holdings_current ON holdings(account_id, security_id, as_of DESC);
+      CREATE INDEX IF NOT EXISTS investment_transactions_history ON investment_transactions(account_id, transaction_date DESC);
+    `,
+    down: `DROP INDEX IF EXISTS investment_transactions_history; DROP INDEX IF EXISTS holdings_current;
+      DROP TABLE IF EXISTS investment_transactions; DROP TABLE IF EXISTS holdings; DROP TABLE IF EXISTS securities;`,
+  },
 ] as const;
 
 export type AppDatabase = Readonly<{

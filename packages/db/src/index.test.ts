@@ -564,4 +564,85 @@ describe("SQLite foundation", () => {
     ).toEqual([expect.objectContaining({ value: 0.03 })]);
     database.close();
   });
+
+  test("reconciles current holding values and reports unknown valuations", () => {
+    const database = createDatabase();
+    database.migrate();
+    const unitOfWork = createUnitOfWork(database);
+    const account = unitOfWork.accounts.create({
+      accountType: "investment",
+      connectionId: null,
+      currency: "USD",
+      externalId: null,
+      name: "Brokerage",
+      status: "active",
+    });
+    const fund = unitOfWork.investments.createSecurity({
+      currency: "USD",
+      name: "Index Fund",
+      securityType: "fund",
+      symbol: "IDX",
+    });
+    unitOfWork.investments.createHolding({
+      accountId: account.id,
+      asOf: "2026-07-01T00:00:00.000Z",
+      costBasisMinor: 90_000,
+      marketValueMinor: null,
+      priceMinor: 10_000,
+      quantity: 10,
+      securityId: fund.id,
+      source: "manual",
+      sourceRecordId: null,
+    });
+    unitOfWork.investments.createHolding({
+      accountId: account.id,
+      asOf: "2026-07-13T00:00:00.000Z",
+      costBasisMinor: 90_000,
+      marketValueMinor: null,
+      priceMinor: 12_000,
+      quantity: 10,
+      securityId: fund.id,
+      source: "manual",
+      sourceRecordId: null,
+    });
+    const unknown = unitOfWork.investments.createSecurity({
+      currency: "USD",
+      name: "Private asset",
+      securityType: "other",
+      symbol: null,
+    });
+    unitOfWork.investments.createHolding({
+      accountId: account.id,
+      asOf: "2026-07-13T00:00:00.000Z",
+      costBasisMinor: null,
+      marketValueMinor: null,
+      priceMinor: null,
+      quantity: 1,
+      securityId: unknown.id,
+      source: "manual",
+      sourceRecordId: null,
+    });
+    expect(unitOfWork.investments.currentValuation(account.id)).toMatchObject({
+      totalValueMinor: 120_000,
+      missing: [
+        expect.objectContaining({
+          reason: expect.stringContaining("required"),
+        }),
+      ],
+    });
+    unitOfWork.investments.createTransaction({
+      accountId: account.id,
+      cashAmountMinor: -90_000,
+      costBasisMinor: 90_000,
+      priceMinor: 9_000,
+      quantity: 10,
+      securityId: fund.id,
+      source: "manual",
+      sourceRecordId: null,
+      transactionDate: "2025-01-01T00:00:00.000Z",
+      transactionType: "buy",
+    });
+    expect(unitOfWork.investments.listTransactions(account.id)).toHaveLength(1);
+    database.close();
+  });
 });

@@ -603,6 +603,122 @@ export const scenarioAssumptionListSchema = z.object({
 export type FinancialGoal = z.infer<typeof financialGoalSchema>;
 export type ScenarioAssumption = z.infer<typeof scenarioAssumptionSchema>;
 
+export const securitySchema = z.object({
+  createdAt: z.iso.datetime(),
+  currency: currencySchema,
+  id: entityIdSchema,
+  name: z.string().min(1),
+  securityType: z.enum(["cash", "etf", "fund", "other", "stock"]),
+  symbol: z.string().nullable(),
+  updatedAt: z.iso.datetime(),
+});
+export const createSecuritySchema = securitySchema
+  .pick({ currency: true, name: true, securityType: true, symbol: true })
+  .partial({ symbol: true })
+  .extend({ symbol: z.string().nullable().default(null) });
+export const securityListSchema = z.object({ items: z.array(securitySchema) });
+export const holdingSchema = z.object({
+  accountId: entityIdSchema,
+  asOf: z.iso.datetime(),
+  costBasisMinor: z.number().int().nonnegative().nullable(),
+  createdAt: z.iso.datetime(),
+  id: entityIdSchema,
+  marketValueMinor: z.number().int().nonnegative().nullable(),
+  priceMinor: z.number().int().nonnegative().nullable(),
+  quantity: z.number().nonnegative().nullable(),
+  securityId: entityIdSchema,
+  source: z.string().min(1),
+  sourceRecordId: entityIdSchema.nullable(),
+  updatedAt: z.iso.datetime(),
+});
+export const createHoldingSchema = holdingSchema
+  .pick({
+    accountId: true,
+    asOf: true,
+    costBasisMinor: true,
+    marketValueMinor: true,
+    priceMinor: true,
+    quantity: true,
+    securityId: true,
+    source: true,
+    sourceRecordId: true,
+  })
+  .partial({
+    costBasisMinor: true,
+    marketValueMinor: true,
+    priceMinor: true,
+    quantity: true,
+    sourceRecordId: true,
+  })
+  .extend({
+    costBasisMinor: z.number().int().nonnegative().nullable().default(null),
+    marketValueMinor: z.number().int().nonnegative().nullable().default(null),
+    priceMinor: z.number().int().nonnegative().nullable().default(null),
+    quantity: z.number().nonnegative().nullable().default(null),
+    sourceRecordId: entityIdSchema.nullable().default(null),
+  });
+export const updateHoldingSchema = createHoldingSchema
+  .pick({
+    asOf: true,
+    costBasisMinor: true,
+    marketValueMinor: true,
+    priceMinor: true,
+    quantity: true,
+  })
+  .partial()
+  .refine(
+    (value) => Object.keys(value).length > 0,
+    "Provide a field to update",
+  );
+export const holdingListSchema = z.object({ items: z.array(holdingSchema) });
+export const investmentTransactionSchema = z.object({
+  accountId: entityIdSchema,
+  cashAmountMinor: z.number().int().nullable(),
+  costBasisMinor: z.number().int().nullable(),
+  createdAt: z.iso.datetime(),
+  id: entityIdSchema,
+  priceMinor: z.number().int().nonnegative().nullable(),
+  quantity: z.number().nullable(),
+  securityId: entityIdSchema.nullable(),
+  source: z.string().min(1),
+  sourceRecordId: entityIdSchema.nullable(),
+  transactionDate: z.iso.datetime(),
+  transactionType: z.enum([
+    "buy",
+    "contribution",
+    "dividend",
+    "fee",
+    "sell",
+    "withdrawal",
+  ]),
+});
+export const createInvestmentTransactionSchema = investmentTransactionSchema
+  .omit({ createdAt: true, id: true })
+  .partial({
+    cashAmountMinor: true,
+    costBasisMinor: true,
+    priceMinor: true,
+    quantity: true,
+    securityId: true,
+    sourceRecordId: true,
+  })
+  .extend({
+    cashAmountMinor: z.number().int().nullable().default(null),
+    costBasisMinor: z.number().int().nullable().default(null),
+    priceMinor: z.number().int().nonnegative().nullable().default(null),
+    quantity: z.number().nullable().default(null),
+    securityId: entityIdSchema.nullable().default(null),
+    sourceRecordId: entityIdSchema.nullable().default(null),
+  });
+export const investmentTransactionListSchema = z.object({
+  items: z.array(investmentTransactionSchema),
+});
+export const investmentValuationSchema = z.object({
+  asOf: z.iso.datetime().nullable(),
+  missing: z.array(z.object({ holdingId: entityIdSchema, reason: z.string() })),
+  totalValueMinor: z.number().int().safe(),
+});
+
 export const problemSchema = z.object({
   detail: z.string(),
   instance: z.string().optional(),

@@ -20,6 +20,10 @@
     "./goals": {
       "types": "./dist/goals.d.ts",
       "import": "./dist/goals.js"
+    },
+    "./investments": {
+      "types": "./dist/investments.d.ts",
+      "import": "./dist/investments.js"
     }
   },
   "main": "./dist/index.js",
