@@ -1,6 +1,9 @@
 import {
   accountListSchema,
   accountSchema,
+  budgetCalculationSchema,
+  budgetListSchema,
+  budgetPeriodListSchema,
   categorizationRuleListSchema,
   categorizationRuleSchema,
   categoryListSchema,
@@ -28,6 +31,9 @@ import {
   type HouseholdFact,
   type Person,
   type Account,
+  type Budget,
+  type BudgetCalculation,
+  type BudgetPeriod,
   type CategorizationRule,
   type Category,
   type CreateAccount,
@@ -44,6 +50,9 @@ import {
 
 export type {
   Account,
+  Budget,
+  BudgetCalculation,
+  BudgetPeriod,
   CategorizationRule,
   Category,
   CreateAccount,
@@ -315,4 +324,35 @@ export async function createScenarioAssumption(
       method: "POST",
     }),
   );
+}
+
+export async function getBudgets(): Promise<readonly Budget[]> {
+  return budgetListSchema.parse(await requestJson("/api/budgets")).items;
+}
+export async function getBudgetPeriods(
+  budgetId: string,
+): Promise<readonly BudgetPeriod[]> {
+  return budgetPeriodListSchema.parse(
+    await requestJson(`/api/budgets/${budgetId}/periods`),
+  ).items;
+}
+export async function getBudgetAnalysis(
+  periodId: string,
+): Promise<BudgetCalculation> {
+  return budgetCalculationSchema.parse(
+    await requestJson(`/api/budget-periods/${periodId}/analysis`),
+  );
+}
+export async function getBudgetDrilldown(
+  periodId: string,
+  input: Readonly<{
+    categoryId?: string;
+    kind: "category" | "transfer" | "uncategorized";
+  }>,
+): Promise<readonly Transaction[]> {
+  const search = new URLSearchParams({ kind: input.kind });
+  if (input.categoryId) search.set("categoryId", input.categoryId);
+  return transactionListSchema.parse(
+    await requestJson(`/api/budget-periods/${periodId}/transactions?${search}`),
+  ).items;
 }

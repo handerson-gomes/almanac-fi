@@ -55,16 +55,16 @@ This is the dependency-ordered implementation backlog for Almanac FI. Each item 
 | 023  | [SimpleFIN sync and sync health](./023-simplefin-sync-and-sync-health/requirements.md)                                        | Deferred    | 016, 017, 019, 022, 014            |
 | 023a | [Application UX foundation](./023a-application-ux-foundation/requirements.md)                                                  | Complete    | 010, 016, 017, 018, 021            |
 | 024  | [Manual financial data entry](./024-manual-financial-data-entry/requirements.md)                                              | Not started | 006, 016, 017, 018                 |
-| 025  | [Transfer matching and review](./025-transfer-matching-and-review/requirements.md)                                            | Not started | 006, 017, 024                      |
-| 025a | [Categorization engine and review queue](./025a-categorization-engine-and-review-queue/requirements.md)                       | Not started | 017, 018, 025                      |
-| 026  | [Income classification](./026-income-classification/requirements.md)                                                          | Not started | 017, 018, 025, 025a                |
-| 027  | [Household profile and time-aware facts](./027-household-profile-and-time-aware-facts/requirements.md)                        | Not started | 004, 005, 007, 008, 010            |
-| 028  | [Financial goals and assumptions](./028-financial-goals-and-assumptions/requirements.md)                                      | Not started | 004, 027                           |
-| 028a | [Investments, holdings, and investment transactions](./028a-investments-holdings-and-investment-transactions/requirements.md) | Not started | 016, 017, 024                      |
-| 028b | [Liabilities and recurring obligations](./028b-liabilities-and-recurring-obligations/requirements.md)                         | Not started | 016, 027, 024                      |
-| 029  | [Budget calculations](./029-budget-calculations/requirements.md)                                                              | Not started | 004, 017, 018, 025, 025a, 026      |
-| 030  | [Budget APIs and management](./030-budgets-api-and-management/requirements.md)                                                | Not started | 006, 007, 008, 018, 029            |
-| 031  | [Budget dashboard and variance review](./031-budget-dashboard-and-variance-review/requirements.md)                            | Not started | 010, 017, 029, 030                 |
+| 025  | [Transfer matching and review](./025-transfer-matching-and-review/requirements.md)                                            | Complete    | 006, 017, 024                      |
+| 025a | [Categorization engine and review queue](./025a-categorization-engine-and-review-queue/requirements.md)                       | Complete    | 017, 018, 025                      |
+| 026  | [Income classification](./026-income-classification/requirements.md)                                                          | Complete    | 017, 018, 025, 025a                |
+| 027  | [Household profile and time-aware facts](./027-household-profile-and-time-aware-facts/requirements.md)                        | Complete    | 004, 005, 007, 008, 010            |
+| 028  | [Financial goals and assumptions](./028-financial-goals-and-assumptions/requirements.md)                                      | Complete    | 004, 027                           |
+| 028a | [Investments, holdings, and investment transactions](./028a-investments-holdings-and-investment-transactions/requirements.md) | Complete    | 016, 017, 024                      |
+| 028b | [Liabilities and recurring obligations](./028b-liabilities-and-recurring-obligations/requirements.md)                         | Complete    | 016, 027, 024                      |
+| 029  | [Budget calculations](./029-budget-calculations/requirements.md)                                                              | Complete    | 004, 017, 018, 025, 025a, 026      |
+| 030  | [Budget APIs and management](./030-budgets-api-and-management/requirements.md)                                                | Complete    | 006, 007, 008, 018, 029            |
+| 031  | [Budget dashboard and variance review](./031-budget-dashboard-and-variance-review/requirements.md)                            | Complete    | 010, 017, 029, 030                 |
 | 032  | [Cash-flow and financial snapshot](./032-cashflow-and-financial-snapshot/requirements.md)                                     | Not started | 017, 025, 026, 028, 029, 030       |
 | 033  | [Scenario model and comparison](./033-scenario-model-and-comparison/requirements.md)                                          | Not started | 006, 027, 028, 032                 |
 | 034  | [Shared monthly forecast engine](./034-shared-monthly-forecast-engine/requirements.md)                                        | Not started | 004, 007, 026, 028, 028b, 032, 033 |

@@ -75,6 +75,113 @@ test("renders the household profile creation state", async () => {
   expect(screen.getByLabelText("Household name")).toBeRequired();
 });
 
+test("renders budget fixture totals, variance, comparison, and data-quality warnings", async () => {
+  vi.stubGlobal("scrollTo", vi.fn());
+  const budgetId = "11111111-1111-4111-8111-111111111111";
+  const periodId = "22222222-2222-4222-8222-222222222222";
+  const previousId = "33333333-3333-4333-8333-333333333333";
+  const categoryId = "44444444-4444-4444-8444-444444444444";
+  const timestamp = "2026-07-01T00:00:00.000Z";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: string | URL | Request) => {
+      const path = input.toString();
+      if (path === "/api/budgets")
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [
+                {
+                  createdAt: timestamp,
+                  currency: "USD",
+                  householdId: null,
+                  id: budgetId,
+                  name: "Monthly",
+                  status: "active",
+                  updatedAt: timestamp,
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+        );
+      if (path === `/api/budgets/${budgetId}/periods`)
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [
+                {
+                  budgetId,
+                  createdAt: timestamp,
+                  dateFrom: timestamp,
+                  dateTo: "2026-07-31T23:59:59.999Z",
+                  id: periodId,
+                  status: "active",
+                  updatedAt: timestamp,
+                },
+                {
+                  budgetId,
+                  createdAt: timestamp,
+                  dateFrom: "2026-06-01T00:00:00.000Z",
+                  dateTo: "2026-06-30T23:59:59.999Z",
+                  id: previousId,
+                  status: "active",
+                  updatedAt: timestamp,
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+        );
+      const actual = path.includes(previousId) ? 18_000 : 20_000;
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            actualAmountMinor: actual,
+            calculationId: `budget-v1:${path.includes(previousId) ? "previous" : "current"}`,
+            calculationVersion: "budget-v1",
+            currency: "USD",
+            lines: [
+              {
+                actualAmountMinor: actual,
+                categoryId,
+                remainingAmountMinor: 50_000 - actual,
+                targetAmountMinor: 50_000,
+                varianceAmountMinor: actual - 50_000,
+              },
+            ],
+            remainingAmountMinor: 50_000 - actual,
+            targetAmountMinor: 50_000,
+            transferExcludedAmountMinor: 100_000,
+            uncategorizedAmountMinor: 10_000,
+            varianceAmountMinor: actual - 50_000,
+          }),
+          { status: 200 },
+        ),
+      );
+    }),
+  );
+  await appRouter.navigate({ to: "/budgets" });
+  await appRouter.load();
+  render(<App />);
+  expect(
+    await screen.findByRole("heading", { name: "Budget dashboard" }),
+  ).toBeInTheDocument();
+  expect(await screen.findByText("200.00")).toBeInTheDocument();
+  expect(
+    await screen.findByText(/20.00 change in actual spending/),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Uncategorized: 100.00" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Excluded transfers: 1,000.00" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("progressbar", { name: `Category ${categoryId} usage` }),
+  ).toHaveAttribute("value", "20000");
+});
+
 test("renders transactions in aligned account and category columns", async () => {
   const accountId = "11111111-1111-4111-8111-111111111111";
   const categoryId = "22222222-2222-4222-8222-222222222222";

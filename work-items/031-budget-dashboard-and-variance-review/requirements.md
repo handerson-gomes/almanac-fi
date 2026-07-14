@@ -22,4 +22,8 @@ Run UI tests plus a fixture screenshot/data assertion suite.
 
 ## Status
 
-Not started
+Complete
+
+## User experience impact
+
+Users can open a monthly budget dashboard to compare planned and actual spending, scan category progress and variance, compare periods, and drill into the exact filtered transactions behind a number. Uncategorized spending and excluded transfers remain visible as data-quality indicators, with clear loading, empty, and error states.

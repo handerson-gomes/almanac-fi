@@ -897,6 +897,12 @@ export const budgetPeriodDetailsSchema = z.object({
   lines: z.array(budgetLineSchema),
   period: budgetPeriodSchema,
 });
+export const budgetDrilldownQuerySchema = z.object({
+  categoryId: entityIdSchema.optional(),
+  kind: z.enum(["category", "transfer", "uncategorized"]).default("category"),
+});
+export type Budget = z.infer<typeof budgetSchema>;
+export type BudgetPeriod = z.infer<typeof budgetPeriodSchema>;
 
 export const problemSchema = z.object({
   detail: z.string(),

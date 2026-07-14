@@ -30,6 +30,10 @@ import {
   createAccount,
   getCsvMappings,
   getAccounts,
+  getBudgetAnalysis,
+  getBudgetDrilldown,
+  getBudgetPeriods,
+  getBudgets,
   getCategories,
   getCategorizationRules,
   getHealth,
@@ -62,6 +66,7 @@ function Layout(): React.JSX.Element {
           <Link to="/categories">Categories</Link>
           <Link to="/profile">Household</Link>
           <Link to="/planning">Planning</Link>
+          <Link to="/budgets">Budgets</Link>
           <Link to="/import">Import CSV</Link>
         </nav>
       </header>
@@ -1166,6 +1171,188 @@ function Planning(): React.JSX.Element {
   );
 }
 
+function BudgetDashboard(): React.JSX.Element {
+  const budgets = useQuery({ queryFn: getBudgets, queryKey: ["budgets"] });
+  const budget = budgets.data?.[0];
+  const periods = useQuery({
+    enabled: budget !== undefined,
+    queryFn: () => getBudgetPeriods(budget?.id ?? ""),
+    queryKey: ["budget-periods", budget?.id],
+  });
+  const [periodId, setPeriodId] = useState("");
+  useEffect(() => {
+    if (!periodId && periods.data?.[0]) setPeriodId(periods.data[0].id);
+  }, [periodId, periods.data]);
+  const analysis = useQuery({
+    enabled: periodId !== "",
+    queryFn: () => getBudgetAnalysis(periodId),
+    queryKey: ["budget-analysis", periodId],
+  });
+  const previousPeriod = periods.data?.find((period) => period.id !== periodId);
+  const comparison = useQuery({
+    enabled: previousPeriod !== undefined,
+    queryFn: () => getBudgetAnalysis(previousPeriod?.id ?? ""),
+    queryKey: ["budget-analysis", previousPeriod?.id],
+  });
+  const [drilldown, setDrilldown] = useState<Readonly<{
+    categoryId?: string;
+    kind: "category" | "transfer" | "uncategorized";
+  }> | null>(null);
+  const transactions = useQuery({
+    enabled: drilldown !== null && periodId !== "",
+    queryFn: () =>
+      getBudgetDrilldown(periodId, drilldown ?? { kind: "uncategorized" }),
+    queryKey: ["budget-drilldown", periodId, drilldown],
+  });
+  if (budgets.isPending)
+    return (
+      <section className="page">
+        <h2>Budget dashboard</h2>
+        <p role="status">Loading budget…</p>
+      </section>
+    );
+  if (budgets.isError)
+    return (
+      <section className="page">
+        <h2>Budget dashboard</h2>
+        <p role="alert">{budgets.error.message}</p>
+      </section>
+    );
+  if (!budget)
+    return (
+      <section className="page">
+        <h2>Budget dashboard</h2>
+        <p>No budgets yet. Create a budget through the local API to begin.</p>
+      </section>
+    );
+  return (
+    <section aria-labelledby="budget-heading" className="page">
+      <h2 id="budget-heading">Budget dashboard</h2>
+      <label htmlFor="budget-period">Budget period</label>
+      <select
+        id="budget-period"
+        value={periodId}
+        onChange={(event) => {
+          setPeriodId(event.target.value);
+          setDrilldown(null);
+        }}
+      >
+        {periods.data?.map((period) => (
+          <option key={period.id} value={period.id}>
+            {period.dateFrom.slice(0, 10)} to {period.dateTo.slice(0, 10)}
+          </option>
+        ))}
+      </select>
+      {periods.data?.length === 0 ? <p>No budget periods yet.</p> : null}
+      {analysis.isPending && periodId ? (
+        <p role="status">Calculating budget…</p>
+      ) : null}
+      {analysis.isError ? <p role="alert">{analysis.error.message}</p> : null}
+      {analysis.data ? (
+        <>
+          <dl className="summary-grid">
+            <div>
+              <dt>Planned</dt>
+              <dd>{formatMinorUnits(analysis.data.targetAmountMinor)}</dd>
+            </div>
+            <div>
+              <dt>Actual</dt>
+              <dd>{formatMinorUnits(analysis.data.actualAmountMinor)}</dd>
+            </div>
+            <div>
+              <dt>Remaining</dt>
+              <dd>{formatMinorUnits(analysis.data.remainingAmountMinor)}</dd>
+            </div>
+          </dl>
+          {comparison.data ? (
+            <p>
+              Compared with previous period:{" "}
+              {formatMinorUnits(
+                analysis.data.actualAmountMinor -
+                  comparison.data.actualAmountMinor,
+              )}{" "}
+              change in actual spending.
+            </p>
+          ) : (
+            <p>No earlier period available for comparison.</p>
+          )}
+          <ul aria-label="Budget category variance" className="data-list">
+            {analysis.data.lines.map((line) => (
+              <li key={line.categoryId}>
+                <span>{line.categoryId}</span>
+                <progress
+                  aria-label={`Category ${line.categoryId} usage`}
+                  max={Math.max(line.targetAmountMinor, 1)}
+                  value={Math.min(
+                    line.actualAmountMinor,
+                    Math.max(line.targetAmountMinor, 1),
+                  )}
+                />{" "}
+                <span>
+                  {formatMinorUnits(line.actualAmountMinor)} of{" "}
+                  {formatMinorUnits(line.targetAmountMinor)} · variance{" "}
+                  {formatMinorUnits(line.varianceAmountMinor)}
+                </span>{" "}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setDrilldown({
+                      categoryId: line.categoryId,
+                      kind: "category",
+                    })
+                  }
+                >
+                  Review transactions
+                </button>
+              </li>
+            ))}
+          </ul>
+          <aside aria-label="Budget data quality">
+            <h3>Data quality</h3>
+            <button
+              type="button"
+              onClick={() => setDrilldown({ kind: "uncategorized" })}
+            >
+              Uncategorized:{" "}
+              {formatMinorUnits(analysis.data.uncategorizedAmountMinor)}
+            </button>
+            <button
+              type="button"
+              onClick={() => setDrilldown({ kind: "transfer" })}
+            >
+              Excluded transfers:{" "}
+              {formatMinorUnits(analysis.data.transferExcludedAmountMinor)}
+            </button>
+          </aside>
+        </>
+      ) : null}
+      {drilldown ? (
+        <section aria-labelledby="drilldown-heading">
+          <h3 id="drilldown-heading">Transaction drill-down</h3>
+          {transactions.isPending ? (
+            <p role="status">Loading transactions…</p>
+          ) : null}
+          {transactions.isError ? (
+            <p role="alert">{transactions.error.message}</p>
+          ) : null}
+          {transactions.data?.length === 0 ? (
+            <p>No transactions match this filter.</p>
+          ) : null}
+          <ul>
+            {transactions.data?.map((transaction) => (
+              <li key={transaction.id}>
+                {transaction.transactionDate.slice(0, 10)} —{" "}
+                {transaction.merchant ?? transaction.payee ?? "Transaction"} —{" "}
+                {formatMinorUnits(transaction.amountMinor)}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
 function NotFound(): React.JSX.Element {
   return <p role="alert">That page does not exist.</p>;
 }
@@ -1206,6 +1393,11 @@ const planningRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/planning",
 });
+const budgetsRoute = createRoute({
+  component: BudgetDashboard,
+  getParentRoute: () => rootRoute,
+  path: "/budgets",
+});
 export const appRouter = createRouter({
   defaultNotFoundComponent: NotFound,
   routeTree: rootRoute.addChildren([
@@ -1216,6 +1408,7 @@ export const appRouter = createRouter({
     csvImportRoute,
     profileRoute,
     planningRoute,
+    budgetsRoute,
   ]),
 });
 const queryClient = new QueryClient();

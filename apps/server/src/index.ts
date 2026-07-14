@@ -14,6 +14,7 @@ import {
   accountSchema,
   budgetCalculationRequestSchema,
   budgetCalculationSchema,
+  budgetDrilldownQuerySchema,
   budgetLineSchema,
   budgetListSchema,
   budgetPeriodDetailsSchema,
@@ -921,16 +922,14 @@ export async function createServer(
       (request.params as { id?: unknown }).id,
     );
     try {
-      return reply
-        .status(201)
-        .send(
-          budgetPeriodSchema.parse(
-            unitOfWork.budgets.createPeriod({
-              ...parseRequest(createBudgetPeriodSchema, request.body),
-              budgetId,
-            }),
-          ),
-        );
+      return reply.status(201).send(
+        budgetPeriodSchema.parse(
+          unitOfWork.budgets.createPeriod({
+            ...parseRequest(createBudgetPeriodSchema, request.body),
+            budgetId,
+          }),
+        ),
+      );
     } catch (error) {
       if (error instanceof Error) badRequest(error.message);
       throw error;
@@ -979,6 +978,66 @@ export async function createServer(
       if (error instanceof Error) badRequest(error.message);
       throw error;
     }
+  });
+  app.get("/budget-periods/:id/analysis", async (request) => {
+    const id = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const details = unitOfWork.budgets.findPeriod(id);
+    if (!details) notFound("The budget period does not exist.");
+    const confirmed = unitOfWork.transferMatches.confirmedTransactionIds();
+    const result = calculateBudget({
+      currency: details.budget.currency,
+      dateFrom: details.period.dateFrom,
+      dateTo: details.period.dateTo,
+      lines: details.lines,
+      transactions: unitOfWork.transactions
+        .list(
+          { dateFrom: details.period.dateFrom, dateTo: details.period.dateTo },
+          { limit: 100 },
+        )
+        .items.map((transaction) => ({
+          ...transaction,
+          isConfirmedTransfer: confirmed.has(transaction.id),
+        })),
+    });
+    database.sqlite
+      .prepare(
+        "INSERT OR IGNORE INTO calculation_runs (id, calculation_version, input_checksum, status, created_at, completed_at) VALUES (?, ?, ?, 'completed', ?, ?)",
+      )
+      .run(
+        result.calculationId,
+        result.calculationVersion,
+        result.calculationId,
+        now(),
+        now(),
+      );
+    return budgetCalculationSchema.parse(result);
+  });
+  app.get("/budget-periods/:id/transactions", async (request) => {
+    const id = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const details = unitOfWork.budgets.findPeriod(id);
+    if (!details) notFound("The budget period does not exist.");
+    const query = parseRequest(budgetDrilldownQuerySchema, request.query);
+    const confirmed = unitOfWork.transferMatches.confirmedTransactionIds();
+    const items = unitOfWork.transactions
+      .list(
+        { dateFrom: details.period.dateFrom, dateTo: details.period.dateTo },
+        { limit: 100 },
+      )
+      .items.filter((transaction) =>
+        query.kind === "transfer"
+          ? confirmed.has(transaction.id)
+          : query.kind === "uncategorized"
+            ? transaction.categoryId === null && !confirmed.has(transaction.id)
+            : transaction.categoryId === query.categoryId &&
+              !confirmed.has(transaction.id),
+      );
+    return transactionListSchema.parse({ items });
   });
   app.post("/csv-imports/preview", async (request) => {
     const input = parseRequest(csvPreviewRequestSchema, request.body);
