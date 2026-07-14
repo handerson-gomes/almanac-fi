@@ -805,6 +805,48 @@ export const liabilityScenarioOverrideSchema = z.object({
   terms: z.record(z.string(), z.number().nullable()),
 });
 
+export const budgetCalculationRequestSchema = z.object({
+  currency: currencySchema,
+  dateFrom: z.iso.datetime(),
+  dateTo: z.iso.datetime(),
+  lines: z.array(
+    z.object({
+      categoryId: entityIdSchema,
+      targetAmountMinor: z.number().int().nonnegative(),
+    }),
+  ),
+  transactions: z.array(
+    z.object({
+      amountMinor: z.number().int().safe(),
+      categoryId: entityIdSchema.nullable(),
+      id: entityIdSchema,
+      isConfirmedTransfer: z.boolean(),
+      transactionDate: z.iso.datetime(),
+    }),
+  ),
+});
+export const budgetCalculationSchema = z.object({
+  actualAmountMinor: z.number().int().nonnegative(),
+  calculationId: z.string().startsWith("budget-v1:"),
+  calculationVersion: z.literal("budget-v1"),
+  currency: currencySchema,
+  lines: z.array(
+    z.object({
+      actualAmountMinor: z.number().int().nonnegative(),
+      categoryId: entityIdSchema,
+      remainingAmountMinor: z.number().int().safe(),
+      targetAmountMinor: z.number().int().nonnegative(),
+      varianceAmountMinor: z.number().int().safe(),
+    }),
+  ),
+  remainingAmountMinor: z.number().int().safe(),
+  targetAmountMinor: z.number().int().nonnegative(),
+  transferExcludedAmountMinor: z.number().int().nonnegative(),
+  uncategorizedAmountMinor: z.number().int().nonnegative(),
+  varianceAmountMinor: z.number().int().safe(),
+});
+export type BudgetCalculation = z.infer<typeof budgetCalculationSchema>;
+
 export const problemSchema = z.object({
   detail: z.string(),
   instance: z.string().optional(),

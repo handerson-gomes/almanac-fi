@@ -12,6 +12,8 @@ import {
   accountBalanceSchema,
   accountListSchema,
   accountSchema,
+  budgetCalculationRequestSchema,
+  budgetCalculationSchema,
   categorizationRuleListSchema,
   categorizationRuleSchema,
   categorizationBatchRequestSchema,
@@ -96,7 +98,8 @@ import {
   updateHouseholdSchema,
   updateHoldingSchema,
 } from "@almanac-fi/api-contracts";
-import { createDatabase, type AppDatabase } from "@almanac-fi/db";
+import { calculateBudget } from "@almanac-fi/core";
+import { createDatabase, now, type AppDatabase } from "@almanac-fi/db";
 import { createUnitOfWork, inUnitOfWork } from "@almanac-fi/db/repositories";
 import { initializeTelemetry } from "@almanac-fi/telemetry";
 import Fastify, {
@@ -785,16 +788,14 @@ export async function createServer(
       entityIdSchema,
       (request.params as { id?: unknown }).id,
     );
-    return reply
-      .status(201)
-      .send(
-        liabilitySchema.parse(
-          unitOfWork.obligations.createLiability({
-            ...parseRequest(createLiabilitySchema, request.body),
-            householdId,
-          }),
-        ),
-      );
+    return reply.status(201).send(
+      liabilitySchema.parse(
+        unitOfWork.obligations.createLiability({
+          ...parseRequest(createLiabilitySchema, request.body),
+          householdId,
+        }),
+      ),
+    );
   });
   app.post("/liabilities/:id/terms", async (request, reply) => {
     const liabilityId = parseRequest(
@@ -802,16 +803,14 @@ export async function createServer(
       (request.params as { id?: unknown }).id,
     );
     try {
-      return reply
-        .status(201)
-        .send(
-          liabilityTermsSchema.parse(
-            unitOfWork.obligations.addTerms({
-              ...parseRequest(createLiabilityTermsSchema, request.body),
-              liabilityId,
-            }),
-          ),
-        );
+      return reply.status(201).send(
+        liabilityTermsSchema.parse(
+          unitOfWork.obligations.addTerms({
+            ...parseRequest(createLiabilityTermsSchema, request.body),
+            liabilityId,
+          }),
+        ),
+      );
     } catch (error) {
       if (error instanceof Error) badRequest(error.message);
       throw error;
@@ -832,16 +831,14 @@ export async function createServer(
       entityIdSchema,
       (request.params as { id?: unknown }).id,
     );
-    return reply
-      .status(201)
-      .send(
-        recurringObligationSchema.parse(
-          unitOfWork.obligations.createObligation({
-            ...parseRequest(createRecurringObligationSchema, request.body),
-            householdId,
-          }),
-        ),
-      );
+    return reply.status(201).send(
+      recurringObligationSchema.parse(
+        unitOfWork.obligations.createObligation({
+          ...parseRequest(createRecurringObligationSchema, request.body),
+          householdId,
+        }),
+      ),
+    );
   });
   app.get("/households/:id/forecast-obligations", async (request) => {
     const householdId = parseRequest(
@@ -862,14 +859,29 @@ export async function createServer(
       (request.params as { id?: unknown }).id,
     );
     const input = parseRequest(liabilityScenarioOverrideSchema, request.body);
-    return reply
-      .status(201)
-      .send(
-        unitOfWork.obligations.createScenarioOverride({
-          ...input,
-          liabilityId,
-        }),
+    return reply.status(201).send(
+      unitOfWork.obligations.createScenarioOverride({
+        ...input,
+        liabilityId,
+      }),
+    );
+  });
+  app.post("/budget-calculations", async (request) => {
+    const result = calculateBudget(
+      parseRequest(budgetCalculationRequestSchema, request.body),
+    );
+    database.sqlite
+      .prepare(
+        "INSERT OR IGNORE INTO calculation_runs (id, calculation_version, input_checksum, status, created_at, completed_at) VALUES (?, ?, ?, 'completed', ?, ?)",
+      )
+      .run(
+        result.calculationId,
+        result.calculationVersion,
+        result.calculationId,
+        now(),
+        now(),
       );
+    return budgetCalculationSchema.parse(result);
   });
   app.post("/csv-imports/preview", async (request) => {
     const input = parseRequest(csvPreviewRequestSchema, request.body);

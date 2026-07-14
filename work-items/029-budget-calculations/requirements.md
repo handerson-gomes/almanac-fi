@@ -22,4 +22,8 @@ Unit-test calculations against synthetic fixtures and edge periods.
 
 ## Status
 
-Not started
+Complete
+
+## User experience impact
+
+Users receive consistent planned-versus-actual totals for any budget period, including category usage, remaining amounts, and variance. Confirmed transfers are excluded, uncategorized spending is called out separately, and every result carries a stable calculation ID and version for reproducibility.

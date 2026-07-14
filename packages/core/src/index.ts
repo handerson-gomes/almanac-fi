@@ -295,3 +295,112 @@ export function classifyIncome(
     recurringGroup,
   };
 }
+
+export const budgetCalculationVersion = "budget-v1" as const;
+export type BudgetCalculationInput = Readonly<{
+  currency: string;
+  dateFrom: string;
+  dateTo: string;
+  lines: readonly Readonly<{ categoryId: string; targetAmountMinor: number }>[];
+  transactions: readonly Readonly<{
+    amountMinor: number;
+    categoryId: string | null;
+    id: string;
+    isConfirmedTransfer: boolean;
+    transactionDate: string;
+  }>[];
+}>;
+export type BudgetCalculation = Readonly<{
+  actualAmountMinor: number;
+  calculationId: string;
+  calculationVersion: typeof budgetCalculationVersion;
+  currency: string;
+  lines: readonly Readonly<{
+    actualAmountMinor: number;
+    categoryId: string;
+    remainingAmountMinor: number;
+    targetAmountMinor: number;
+    varianceAmountMinor: number;
+  }>[];
+  remainingAmountMinor: number;
+  targetAmountMinor: number;
+  transferExcludedAmountMinor: number;
+  uncategorizedAmountMinor: number;
+  varianceAmountMinor: number;
+}>;
+
+function stableHash(value: string): string {
+  let hash = 2_166_136_261;
+  for (const character of value) {
+    hash ^= character.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+export function calculateBudget(
+  input: BudgetCalculationInput,
+): BudgetCalculation {
+  if (input.dateTo < input.dateFrom)
+    throw new Error("Budget period end must not precede its start.");
+  const relevant = input.transactions.filter(
+    (transaction) =>
+      transaction.transactionDate >= input.dateFrom &&
+      transaction.transactionDate <= input.dateTo,
+  );
+  const excluded = relevant.filter(
+    (transaction) => transaction.isConfirmedTransfer,
+  );
+  const spending = relevant.filter(
+    (transaction) =>
+      !transaction.isConfirmedTransfer && transaction.amountMinor < 0,
+  );
+  const lines = [...input.lines]
+    .sort((left, right) => left.categoryId.localeCompare(right.categoryId))
+    .map((line) => {
+      const actualAmountMinor = -spending
+        .filter((transaction) => transaction.categoryId === line.categoryId)
+        .reduce((sum, transaction) => sum + transaction.amountMinor, 0);
+      return {
+        actualAmountMinor,
+        categoryId: line.categoryId,
+        remainingAmountMinor: line.targetAmountMinor - actualAmountMinor,
+        targetAmountMinor: line.targetAmountMinor,
+        varianceAmountMinor: actualAmountMinor - line.targetAmountMinor,
+      };
+    });
+  const targetAmountMinor = lines.reduce(
+    (sum, line) => sum + line.targetAmountMinor,
+    0,
+  );
+  const actualAmountMinor = lines.reduce(
+    (sum, line) => sum + line.actualAmountMinor,
+    0,
+  );
+  const normalized = JSON.stringify({
+    ...input,
+    lines: [...input.lines].sort((a, b) =>
+      a.categoryId.localeCompare(b.categoryId),
+    ),
+    transactions: [...input.transactions].sort((a, b) =>
+      a.id.localeCompare(b.id),
+    ),
+  });
+  return {
+    actualAmountMinor,
+    calculationId: `${budgetCalculationVersion}:${stableHash(normalized)}`,
+    calculationVersion: budgetCalculationVersion,
+    currency: input.currency,
+    lines,
+    remainingAmountMinor: targetAmountMinor - actualAmountMinor,
+    targetAmountMinor,
+    transferExcludedAmountMinor: excluded.reduce(
+      (sum, transaction) => sum + Math.abs(transaction.amountMinor),
+      0,
+    ),
+    uncategorizedAmountMinor: -spending
+      .filter((transaction) => transaction.categoryId === null)
+      .reduce((sum, transaction) => sum + transaction.amountMinor, 0),
+    varianceAmountMinor: actualAmountMinor - targetAmountMinor,
+  };
+}

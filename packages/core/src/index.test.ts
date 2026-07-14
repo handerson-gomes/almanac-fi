@@ -4,6 +4,7 @@ import {
   addMoney,
   basisPointsSchema,
   classifyIncome,
+  calculateBudget,
   detectTransferCandidates,
   excludeConfirmedTransfers,
   isoDateSchema,
@@ -190,5 +191,66 @@ describe("income classification", () => {
     ],
   ] as const)("classifies fixture %# deterministically", (input, expected) => {
     expect(classifyIncome(input).kind).toBe(expected);
+  });
+});
+
+describe("budget calculations", () => {
+  test("is reproducible and explicitly handles transfers and uncategorized spending", () => {
+    const categoryId = "food";
+    const input = {
+      currency: "USD",
+      dateFrom: "2026-07-01T00:00:00.000Z",
+      dateTo: "2026-07-31T23:59:59.999Z",
+      lines: [{ categoryId, targetAmountMinor: 50_000 }],
+      transactions: [
+        {
+          amountMinor: -20_000,
+          categoryId,
+          id: "spend",
+          isConfirmedTransfer: false,
+          transactionDate: "2026-07-10T00:00:00.000Z",
+        },
+        {
+          amountMinor: -10_000,
+          categoryId: null,
+          id: "unknown",
+          isConfirmedTransfer: false,
+          transactionDate: "2026-07-11T00:00:00.000Z",
+        },
+        {
+          amountMinor: -100_000,
+          categoryId,
+          id: "transfer",
+          isConfirmedTransfer: true,
+          transactionDate: "2026-07-12T00:00:00.000Z",
+        },
+      ],
+    } as const;
+    const first = calculateBudget(input);
+    expect(first).toMatchObject({
+      actualAmountMinor: 20_000,
+      remainingAmountMinor: 30_000,
+      transferExcludedAmountMinor: 100_000,
+      uncategorizedAmountMinor: 10_000,
+      varianceAmountMinor: -30_000,
+    });
+    expect(
+      calculateBudget({
+        ...input,
+        transactions: [...input.transactions].reverse(),
+      }),
+    ).toEqual(first);
+  });
+
+  test("rejects inverted periods", () => {
+    expect(() =>
+      calculateBudget({
+        currency: "USD",
+        dateFrom: "2026-08-01",
+        dateTo: "2026-07-01",
+        lines: [],
+        transactions: [],
+      }),
+    ).toThrow(/period end/);
   });
 });
