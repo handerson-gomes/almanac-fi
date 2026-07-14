@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import {
   detectTransferCandidates,
+  classifyIncome,
+  type IncomeKind,
   normalizeMerchant,
   selectCategorySuggestion,
   type CategorizationMethod,
@@ -188,6 +190,23 @@ export type CategorizationReview = Readonly<{
   transactionId: string;
   updatedAt: string;
 }>;
+export type IncomeClassificationRecord = Readonly<{
+  confidence: number;
+  confirmedAt: string | null;
+  confirmedBy: string | null;
+  createdAt: string;
+  id: string;
+  kind: IncomeKind;
+  method:
+    | "account_context"
+    | "category_rule"
+    | "transfer_match"
+    | "user_confirmation";
+  recurringGroup: string | null;
+  status: "confirmed" | "inferred" | "pending";
+  transactionId: string;
+  updatedAt: string;
+}>;
 type CategorizationRuleUpdate = {
   [
     Key in
@@ -357,6 +376,22 @@ export interface CategorizationReviewRepository {
     }>,
   ): CategorizationReview | undefined;
 }
+export interface IncomeClassificationRepository {
+  confirm(
+    id: string,
+    kind: IncomeKind,
+    actor: string,
+  ): IncomeClassificationRecord | undefined;
+  list(
+    status?: IncomeClassificationRecord["status"],
+  ): readonly IncomeClassificationRecord[];
+  refresh(): readonly IncomeClassificationRecord[];
+  summary(): Readonly<{
+    incomeAmountMinor: number;
+    recurringGroups: number;
+    reviewCount: number;
+  }>;
+}
 
 export interface UnitOfWork {
   readonly accounts: AccountRepository;
@@ -367,6 +402,7 @@ export interface UnitOfWork {
   readonly csvMappings: CsvMappingRepository;
   readonly importBatches: ImportBatchRepository;
   readonly institutionConnections: InstitutionConnectionRepository;
+  readonly incomeClassifications: IncomeClassificationRepository;
   readonly sourceRecords: SourceRecordRepository;
   readonly transactions: TransactionRepository;
   readonly transferMatches: TransferMatchRepository;
@@ -1408,6 +1444,98 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
       return categorizationReviewRecord(id);
     },
   };
+  function incomeRecord(id: string): IncomeClassificationRecord | undefined {
+    return database.sqlite
+      .prepare(
+        "SELECT id, transaction_id AS transactionId, kind, method, confidence, recurring_group AS recurringGroup, status, confirmed_at AS confirmedAt, confirmed_by AS confirmedBy, created_at AS createdAt, updated_at AS updatedAt FROM income_classifications WHERE id = ?",
+      )
+      .get(id) as IncomeClassificationRecord | undefined;
+  }
+  const incomeClassifications: IncomeClassificationRepository = {
+    confirm(id, kind, actor) {
+      const current = incomeRecord(id);
+      if (!current) return undefined;
+      if (current.kind === "transfer" && kind === "income") {
+        throw new Error("A confirmed transfer cannot be classified as income.");
+      }
+      const timestamp = now();
+      database.sqlite
+        .prepare(
+          "UPDATE income_classifications SET kind = ?, method = 'user_confirmation', confidence = 1, status = 'confirmed', confirmed_at = ?, confirmed_by = ?, updated_at = ? WHERE id = ?",
+        )
+        .run(kind, timestamp, actor, timestamp, id);
+      const updated = incomeRecord(id);
+      auditEvents.append({
+        actor,
+        afterJson: JSON.stringify(updated),
+        beforeJson: JSON.stringify(current),
+        entityId: id,
+        entityType: "income_classification",
+        operation: "confirm",
+        sourceRecordId: null,
+      });
+      return updated;
+    },
+    list(status) {
+      return database.sqlite
+        .prepare(
+          `SELECT id, transaction_id AS transactionId, kind, method, confidence, recurring_group AS recurringGroup, status, confirmed_at AS confirmedAt, confirmed_by AS confirmedBy, created_at AS createdAt, updated_at AS updatedAt FROM income_classifications ${status === undefined ? "" : "WHERE status = ?"} ORDER BY created_at, id`,
+        )
+        .all(
+          ...(status === undefined ? [] : [status]),
+        ) as IncomeClassificationRecord[];
+    },
+    refresh() {
+      const confirmedTransfers = transferMatches.confirmedTransactionIds();
+      for (const transaction of transactions.list({}, { limit: 100 }).items) {
+        const account = accounts.findById(transaction.accountId);
+        const category =
+          transaction.categoryId === null
+            ? undefined
+            : categories.findById(transaction.categoryId);
+        const classification = classifyIncome({
+          accountType: account?.accountType ?? "other",
+          amountMinor: transaction.amountMinor,
+          categoryName: category?.name,
+          isConfirmedTransfer: confirmedTransfers.has(transaction.id),
+          merchant: transaction.merchant,
+          payee: transaction.payee,
+        });
+        const timestamp = now();
+        database.sqlite
+          .prepare(
+            "INSERT INTO income_classifications (id, transaction_id, kind, method, confidence, recurring_group, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(transaction_id) DO UPDATE SET kind = excluded.kind, method = excluded.method, confidence = excluded.confidence, recurring_group = excluded.recurring_group, status = excluded.status, updated_at = excluded.updated_at WHERE income_classifications.status <> 'confirmed'",
+          )
+          .run(
+            randomUUID(),
+            transaction.id,
+            classification.kind,
+            classification.method,
+            classification.confidence,
+            classification.recurringGroup,
+            classification.kind === "ambiguous" ? "pending" : "inferred",
+            timestamp,
+            timestamp,
+          );
+      }
+      return incomeClassifications.list();
+    },
+    summary() {
+      const row = database.sqlite
+        .prepare(
+          `SELECT COALESCE(SUM(CASE WHEN i.kind = 'income' THEN t.amount_minor ELSE 0 END), 0) AS incomeAmountMinor,
+          COUNT(DISTINCT CASE WHEN i.kind = 'income' THEN i.recurring_group END) AS recurringGroups,
+          SUM(CASE WHEN i.status = 'pending' THEN 1 ELSE 0 END) AS reviewCount
+         FROM income_classifications i JOIN transactions t ON t.id = i.transaction_id`,
+        )
+        .get() as {
+        incomeAmountMinor: number;
+        recurringGroups: number;
+        reviewCount: number;
+      };
+      return row;
+    },
+  };
   return Object.freeze({
     accounts,
     auditEvents,
@@ -1417,6 +1545,7 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
     csvMappings,
     importBatches,
     institutionConnections,
+    incomeClassifications,
     sourceRecords,
     transactions,
     transferMatches,

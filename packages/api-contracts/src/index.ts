@@ -384,6 +384,49 @@ export const categorizationBatchRequestSchema = z.object({
   ids: z.array(entityIdSchema).min(1).max(100),
 });
 
+export const incomeKindSchema = z.enum([
+  "ambiguous",
+  "income",
+  "not_income",
+  "refund",
+  "transfer",
+]);
+export const incomeClassificationStatusSchema = z.enum([
+  "confirmed",
+  "inferred",
+  "pending",
+]);
+export const incomeClassificationSchema = z.object({
+  confidence: z.number().min(0).max(1),
+  confirmedAt: z.iso.datetime().nullable(),
+  confirmedBy: z.string().nullable(),
+  createdAt: z.iso.datetime(),
+  id: entityIdSchema,
+  kind: incomeKindSchema,
+  method: z.enum([
+    "account_context",
+    "category_rule",
+    "transfer_match",
+    "user_confirmation",
+  ]),
+  recurringGroup: z.string().nullable(),
+  status: incomeClassificationStatusSchema,
+  transactionId: entityIdSchema,
+  updatedAt: z.iso.datetime(),
+});
+export const incomeClassificationListSchema = z.object({
+  items: z.array(incomeClassificationSchema),
+});
+export const incomeConfirmationSchema = z.object({
+  actor: z.string().trim().min(1).max(100).default("user"),
+  kind: incomeKindSchema,
+});
+export const incomeSummarySchema = z.object({
+  incomeAmountMinor: z.number().int().safe(),
+  recurringGroups: z.number().int().nonnegative(),
+  reviewCount: z.number().int().nonnegative(),
+});
+
 export const problemSchema = z.object({
   detail: z.string(),
   instance: z.string().optional(),

@@ -22,4 +22,8 @@ Run classification tests for salary, refunds, transfers, and ambiguous deposits.
 
 ## Status
 
-Not started
+Complete
+
+## User experience impact
+
+Users can see deposits separated into recurring income, refunds, transfers, and items needing review. Confirmed transfers never appear as income, recurring pay sources are grouped consistently, and a user-confirmed classification overrides future inference while remaining auditable.

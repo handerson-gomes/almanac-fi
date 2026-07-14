@@ -160,6 +160,21 @@ const migrations = [
     `,
     down: `DROP INDEX IF EXISTS categorization_reviews_status; DROP TABLE IF EXISTS categorization_reviews;`,
   },
+  {
+    id: "0006_income_classifications",
+    up: `
+      CREATE TABLE IF NOT EXISTS income_classifications (
+        id TEXT PRIMARY KEY, transaction_id TEXT NOT NULL UNIQUE REFERENCES transactions(id),
+        kind TEXT NOT NULL CHECK (kind IN ('ambiguous', 'income', 'not_income', 'refund', 'transfer')),
+        method TEXT NOT NULL CHECK (method IN ('account_context', 'category_rule', 'transfer_match', 'user_confirmation')),
+        confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+        recurring_group TEXT, status TEXT NOT NULL CHECK (status IN ('inferred', 'pending', 'confirmed')),
+        confirmed_at TEXT, confirmed_by TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS income_classifications_status ON income_classifications(status, kind);
+    `,
+    down: `DROP INDEX IF EXISTS income_classifications_status; DROP TABLE IF EXISTS income_classifications;`,
+  },
 ] as const;
 
 export type AppDatabase = Readonly<{

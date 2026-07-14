@@ -36,6 +36,11 @@ import {
   healthResponseSchema,
   institutionConnectionListSchema,
   institutionConnectionSchema,
+  incomeClassificationListSchema,
+  incomeClassificationSchema,
+  incomeClassificationStatusSchema,
+  incomeConfirmationSchema,
+  incomeSummarySchema,
   openApiDocument,
   paginationQuerySchema,
   problem,
@@ -467,6 +472,43 @@ export async function createServer(
         ...unitOfWork.transferMatches.confirmedTransactionIds(),
       ],
     }),
+  );
+  app.post("/income-classifications/refresh", async () =>
+    incomeClassificationListSchema.parse({
+      items: unitOfWork.incomeClassifications.refresh(),
+    }),
+  );
+  app.get("/income-classifications", async (request) => {
+    const status = parseRequest(
+      incomeClassificationStatusSchema.optional(),
+      (request.query as { status?: unknown }).status,
+    );
+    return incomeClassificationListSchema.parse({
+      items: unitOfWork.incomeClassifications.list(status),
+    });
+  });
+  app.post("/income-classifications/:id/confirm", async (request) => {
+    const id = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const input = parseRequest(incomeConfirmationSchema, request.body);
+    try {
+      const classification = unitOfWork.incomeClassifications.confirm(
+        id,
+        input.kind,
+        input.actor,
+      );
+      if (!classification)
+        notFound("The income classification does not exist.");
+      return incomeClassificationSchema.parse(classification);
+    } catch (error) {
+      if (error instanceof Error) badRequest(error.message);
+      throw error;
+    }
+  });
+  app.get("/income-summary", async () =>
+    incomeSummarySchema.parse(unitOfWork.incomeClassifications.summary()),
   );
   app.post("/csv-imports/preview", async (request) => {
     const input = parseRequest(csvPreviewRequestSchema, request.body);

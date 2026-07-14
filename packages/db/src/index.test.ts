@@ -399,4 +399,68 @@ describe("SQLite foundation", () => {
     ).toMatchObject({ categoryId: category.id });
     database.close();
   });
+
+  test("groups recurring income and preserves user confirmation", () => {
+    const database = createDatabase();
+    database.migrate();
+    const unitOfWork = createUnitOfWork(database);
+    const account = unitOfWork.accounts.create({
+      accountType: "checking",
+      connectionId: null,
+      currency: "USD",
+      externalId: null,
+      name: "Income",
+      status: "active",
+    });
+    const salary = unitOfWork.categories.create({
+      name: "Salary",
+      parentId: null,
+      status: "active",
+    });
+    const batch = unitOfWork.importBatches.create({
+      actor: "user",
+      checksum: "income-batch",
+      source: "manual",
+    });
+    for (let index = 0; index < 2; index += 1) {
+      const source = unitOfWork.sourceRecords.create({
+        batchId: batch.id,
+        checksum: `income-${index}`,
+        rawPayload: "{}",
+        sourceType: "manual",
+      });
+      unitOfWork.transactions.create({
+        accountId: account.id,
+        amountMinor: 200_000,
+        categoryId: salary.id,
+        currency: "USD",
+        merchant: null,
+        payee: "Example Employer",
+        postedAt: null,
+        sourceCategory: null,
+        sourceIdentity: `income:${index}`,
+        sourceRecordId: source.id,
+        status: "posted",
+        transactionDate: `2026-0${6 + index}-01T00:00:00.000Z`,
+      });
+    }
+    const records = unitOfWork.incomeClassifications.refresh();
+    expect(unitOfWork.incomeClassifications.summary()).toEqual({
+      incomeAmountMinor: 400_000,
+      recurringGroups: 1,
+      reviewCount: 0,
+    });
+    unitOfWork.incomeClassifications.confirm(
+      records[0]?.id ?? "",
+      "not_income",
+      "user",
+    );
+    unitOfWork.incomeClassifications.refresh();
+    expect(unitOfWork.incomeClassifications.list()[0]).toMatchObject({
+      kind: "not_income",
+      method: "user_confirmation",
+      status: "confirmed",
+    });
+    database.close();
+  });
 });

@@ -224,3 +224,74 @@ export function selectCategorySuggestion(
   ];
   return ordered.find((suggestion) => suggestion !== undefined);
 }
+
+export type IncomeKind =
+  "ambiguous" | "income" | "not_income" | "refund" | "transfer";
+export type IncomeClassification = Readonly<{
+  confidence: number;
+  kind: IncomeKind;
+  method: "account_context" | "category_rule" | "transfer_match";
+  recurringGroup: string | null;
+}>;
+
+export function classifyIncome(
+  input: Readonly<{
+    accountType: string;
+    amountMinor: number;
+    categoryName?: string | null | undefined;
+    isConfirmedTransfer: boolean;
+    merchant?: string | null | undefined;
+    payee?: string | null | undefined;
+  }>,
+): IncomeClassification {
+  if (input.isConfirmedTransfer) {
+    return {
+      confidence: 1,
+      kind: "transfer",
+      method: "transfer_match",
+      recurringGroup: null,
+    };
+  }
+  if (input.amountMinor <= 0) {
+    return {
+      confidence: 1,
+      kind: "not_income",
+      method: "account_context",
+      recurringGroup: null,
+    };
+  }
+  const category = input.categoryName?.toLocaleLowerCase() ?? "";
+  const recurringGroup = normalizeMerchant(
+    input.payee ?? input.merchant ?? null,
+  );
+  if (/refund|reimbursement|cashback/u.test(category)) {
+    return {
+      confidence: 0.95,
+      kind: "refund",
+      method: "category_rule",
+      recurringGroup: null,
+    };
+  }
+  if (/salary|payroll|wages|income|interest|dividend/u.test(category)) {
+    return {
+      confidence: 0.95,
+      kind: "income",
+      method: "category_rule",
+      recurringGroup,
+    };
+  }
+  if (input.accountType === "investment") {
+    return {
+      confidence: 0.8,
+      kind: "not_income",
+      method: "account_context",
+      recurringGroup: null,
+    };
+  }
+  return {
+    confidence: 0.4,
+    kind: "ambiguous",
+    method: "account_context",
+    recurringGroup,
+  };
+}

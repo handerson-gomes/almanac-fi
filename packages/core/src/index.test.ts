@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   addMoney,
   basisPointsSchema,
+  classifyIncome,
   detectTransferCandidates,
   excludeConfirmedTransfers,
   isoDateSchema,
@@ -145,5 +146,49 @@ describe("categorization layers", () => {
     };
     expect(selectCategorySuggestion({ ai })).toBeUndefined();
     expect(selectCategorySuggestion({ ai }, { enableAi: true })).toEqual(ai);
+  });
+});
+
+describe("income classification", () => {
+  test.each([
+    [
+      {
+        accountType: "checking",
+        amountMinor: 200_000,
+        categoryName: "Salary",
+        isConfirmedTransfer: false,
+        payee: "Employer",
+      },
+      "income",
+    ],
+    [
+      {
+        accountType: "checking",
+        amountMinor: 5_000,
+        categoryName: "Refunds",
+        isConfirmedTransfer: false,
+      },
+      "refund",
+    ],
+    [
+      {
+        accountType: "checking",
+        amountMinor: 100_000,
+        categoryName: "Salary",
+        isConfirmedTransfer: true,
+      },
+      "transfer",
+    ],
+    [
+      {
+        accountType: "checking",
+        amountMinor: 12_345,
+        categoryName: null,
+        isConfirmedTransfer: false,
+      },
+      "ambiguous",
+    ],
+  ] as const)("classifies fixture %# deterministically", (input, expected) => {
+    expect(classifyIncome(input).kind).toBe(expected);
   });
 });

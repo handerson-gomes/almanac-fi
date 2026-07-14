@@ -217,6 +217,33 @@ export const categorizationReviews = sqliteTable("categorization_reviews", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const incomeClassifications = sqliteTable("income_classifications", {
+  confidence: real("confidence").notNull(),
+  confirmedAt: text("confirmed_at"),
+  confirmedBy: text("confirmed_by"),
+  createdAt: text("created_at").notNull(),
+  id: text("id").primaryKey(),
+  kind: text("kind", {
+    enum: ["ambiguous", "income", "not_income", "refund", "transfer"],
+  }).notNull(),
+  method: text("method", {
+    enum: [
+      "account_context",
+      "category_rule",
+      "transfer_match",
+      "user_confirmation",
+    ],
+  }).notNull(),
+  recurringGroup: text("recurring_group"),
+  status: text("status", {
+    enum: ["inferred", "pending", "confirmed"],
+  }).notNull(),
+  transactionId: text("transaction_id")
+    .notNull()
+    .references(() => transactions.id),
+  updatedAt: text("updated_at").notNull(),
+});
+
 export const csvMappings = sqliteTable("csv_mappings", {
   createdAt: text("created_at").notNull(),
   id: text("id").primaryKey(),
