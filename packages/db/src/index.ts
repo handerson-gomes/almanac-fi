@@ -175,6 +175,37 @@ const migrations = [
     `,
     down: `DROP INDEX IF EXISTS income_classifications_status; DROP TABLE IF EXISTS income_classifications;`,
   },
+  {
+    id: "0007_household_profile",
+    up: `
+      CREATE TABLE IF NOT EXISTS households (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, currency TEXT NOT NULL CHECK (currency GLOB '[A-Z][A-Z][A-Z]'),
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS people (
+        id TEXT PRIMARY KEY, household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+        name TEXT NOT NULL, birth_date TEXT, relationship TEXT NOT NULL,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS dependents (
+        id TEXT PRIMARY KEY, person_id TEXT NOT NULL UNIQUE REFERENCES people(id) ON DELETE CASCADE,
+        dependent_until TEXT, notes TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS household_facts (
+        id TEXT PRIMARY KEY, household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+        person_id TEXT REFERENCES people(id) ON DELETE CASCADE, fact_key TEXT NOT NULL,
+        value_type TEXT NOT NULL CHECK (value_type IN ('boolean', 'date', 'number', 'string')),
+        value_json TEXT NOT NULL, effective_from TEXT NOT NULL, effective_to TEXT,
+        source TEXT NOT NULL, confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+        sensitivity TEXT NOT NULL CHECK (sensitivity IN ('standard', 'sensitive')),
+        verified_at TEXT, verified_by TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        CHECK(effective_to IS NULL OR effective_to > effective_from)
+      );
+      CREATE INDEX IF NOT EXISTS household_facts_resolution ON household_facts(household_id, fact_key, effective_from, effective_to);
+    `,
+    down: `DROP INDEX IF EXISTS household_facts_resolution; DROP TABLE IF EXISTS household_facts;
+      DROP TABLE IF EXISTS dependents; DROP TABLE IF EXISTS people; DROP TABLE IF EXISTS households;`,
+  },
 ] as const;
 
 export type AppDatabase = Readonly<{

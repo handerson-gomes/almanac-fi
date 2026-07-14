@@ -12,6 +12,15 @@ import {
   csvMappingRecordSchema,
   csvPreviewSchema,
   healthResponseSchema,
+  householdFactListSchema,
+  householdFactSchema,
+  householdListSchema,
+  householdSchema,
+  personListSchema,
+  personSchema,
+  type Household,
+  type HouseholdFact,
+  type Person,
   type Account,
   type CategorizationRule,
   type Category,
@@ -39,6 +48,9 @@ export type {
   CsvPreviewRequest,
   Transaction,
   TransactionDetails,
+  Household,
+  HouseholdFact,
+  Person,
 };
 
 export type TransactionPage = Readonly<{
@@ -181,6 +193,66 @@ export async function createCategorizationRule(
           matchField: "merchant",
         }),
       ),
+      method: "POST",
+    }),
+  );
+}
+
+export async function getHouseholds(): Promise<readonly Household[]> {
+  return householdListSchema.parse(await requestJson("/api/households")).items;
+}
+export async function createHousehold(
+  input: Readonly<{ currency: string; name: string }>,
+): Promise<Household> {
+  return householdSchema.parse(
+    await requestJson("/api/households", {
+      body: JSON.stringify(input),
+      method: "POST",
+    }),
+  );
+}
+export async function getPeople(
+  householdId: string,
+): Promise<readonly Person[]> {
+  return personListSchema.parse(
+    await requestJson(`/api/households/${householdId}/people`),
+  ).items;
+}
+export async function createPerson(
+  householdId: string,
+  input: Readonly<{ dependent: boolean; name: string; relationship: string }>,
+): Promise<Person> {
+  return personSchema.parse(
+    await requestJson(`/api/households/${householdId}/people`, {
+      body: JSON.stringify(input),
+      method: "POST",
+    }),
+  );
+}
+export async function getHouseholdFacts(
+  householdId: string,
+  asOf?: string,
+): Promise<readonly HouseholdFact[]> {
+  const query = asOf ? `?asOf=${encodeURIComponent(asOf)}` : "";
+  return householdFactListSchema.parse(
+    await requestJson(`/api/households/${householdId}/facts${query}`),
+  ).items;
+}
+export async function createHouseholdFact(
+  householdId: string,
+  input: Readonly<{
+    confidence: number;
+    effectiveFrom: string;
+    factKey: string;
+    sensitivity: "sensitive" | "standard";
+    source: string;
+    value: string;
+    valueType: "string";
+  }>,
+): Promise<HouseholdFact> {
+  return householdFactSchema.parse(
+    await requestJson(`/api/households/${householdId}/facts`, {
+      body: JSON.stringify(input),
       method: "POST",
     }),
   );

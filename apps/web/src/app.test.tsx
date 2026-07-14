@@ -56,6 +56,25 @@ test("renders the accounts screen and its account creation form", async () => {
   expect(await screen.findByText("No accounts yet.")).toBeInTheDocument();
 });
 
+test("renders the household profile creation state", async () => {
+  vi.stubGlobal("scrollTo", vi.fn());
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [] }), { status: 200 }),
+      ),
+  );
+  await appRouter.navigate({ to: "/profile" });
+  await appRouter.load();
+  render(<App />);
+  expect(
+    await screen.findByRole("heading", { name: "Household profile" }),
+  ).toBeInTheDocument();
+  expect(screen.getByLabelText("Household name")).toBeRequired();
+});
+
 test("renders transactions in aligned account and category columns", async () => {
   const accountId = "11111111-1111-4111-8111-111111111111";
   const categoryId = "22222222-2222-4222-8222-222222222222";

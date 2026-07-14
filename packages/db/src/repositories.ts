@@ -11,6 +11,10 @@ import {
 
 import type { AppDatabase } from "./index.js";
 import { now } from "./index.js";
+import {
+  createHouseholdRepository,
+  type HouseholdRepository,
+} from "./households.js";
 
 export type Page<T> = Readonly<{ items: readonly T[]; nextCursor?: string }>;
 export type PageRequest = Readonly<{
@@ -403,6 +407,7 @@ export interface UnitOfWork {
   readonly importBatches: ImportBatchRepository;
   readonly institutionConnections: InstitutionConnectionRepository;
   readonly incomeClassifications: IncomeClassificationRepository;
+  readonly households: HouseholdRepository;
   readonly sourceRecords: SourceRecordRepository;
   readonly transactions: TransactionRepository;
   readonly transferMatches: TransferMatchRepository;
@@ -1536,6 +1541,9 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
       return row;
     },
   };
+  const households = createHouseholdRepository(database, (input) => {
+    auditEvents.append({ ...input, sourceRecordId: null });
+  });
   return Object.freeze({
     accounts,
     auditEvents,
@@ -1546,6 +1554,7 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
     importBatches,
     institutionConnections,
     incomeClassifications,
+    households,
     sourceRecords,
     transactions,
     transferMatches,

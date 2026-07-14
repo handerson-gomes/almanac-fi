@@ -21,6 +21,9 @@ import {
   commitCsvImport,
   createCategorizationRule,
   createCategory,
+  createHousehold,
+  createHouseholdFact,
+  createPerson,
   createCsvMapping,
   createAccount,
   getCsvMappings,
@@ -28,6 +31,9 @@ import {
   getCategories,
   getCategorizationRules,
   getHealth,
+  getHouseholdFacts,
+  getHouseholds,
+  getPeople,
   getTransaction,
   getTransactions,
   previewCsvImport,
@@ -50,6 +56,7 @@ function Layout(): React.JSX.Element {
           <Link to="/accounts">Accounts</Link>
           <Link to="/transactions">Transactions</Link>
           <Link to="/categories">Categories</Link>
+          <Link to="/profile">Household</Link>
           <Link to="/import">Import CSV</Link>
         </nav>
       </header>
@@ -876,6 +883,159 @@ function Overview(): React.JSX.Element {
   );
 }
 
+function HouseholdProfile(): React.JSX.Element {
+  const queryClient = useQueryClient();
+  const households = useQuery({
+    queryFn: getHouseholds,
+    queryKey: ["households"],
+  });
+  const household = households.data?.[0];
+  const people = useQuery({
+    enabled: household !== undefined,
+    queryFn: () => getPeople(household?.id ?? ""),
+    queryKey: ["people", household?.id],
+  });
+  const [asOf, setAsOf] = useState(new Date().toISOString().slice(0, 10));
+  const facts = useQuery({
+    enabled: household !== undefined,
+    queryFn: () => getHouseholdFacts(household?.id ?? "", asOf),
+    queryKey: ["household-facts", household?.id, asOf],
+  });
+  const [householdName, setHouseholdName] = useState("");
+  const [memberName, setMemberName] = useState("");
+  const [factKey, setFactKey] = useState("");
+  const [factValue, setFactValue] = useState("");
+  const createHome = useMutation({
+    mutationFn: () => createHousehold({ currency: "USD", name: householdName }),
+    onSuccess: async () =>
+      queryClient.invalidateQueries({ queryKey: ["households"] }),
+  });
+  const addMember = useMutation({
+    mutationFn: () =>
+      createPerson(household?.id ?? "", {
+        dependent: false,
+        name: memberName,
+        relationship: "member",
+      }),
+    onSuccess: async () => {
+      setMemberName("");
+      await queryClient.invalidateQueries({
+        queryKey: ["people", household?.id],
+      });
+    },
+  });
+  const addFact = useMutation({
+    mutationFn: () =>
+      createHouseholdFact(household?.id ?? "", {
+        confidence: 1,
+        effectiveFrom: asOf,
+        factKey,
+        sensitivity: "standard",
+        source: "user",
+        value: factValue,
+        valueType: "string",
+      }),
+    onSuccess: async () => {
+      setFactKey("");
+      setFactValue("");
+      await queryClient.invalidateQueries({
+        queryKey: ["household-facts", household?.id],
+      });
+    },
+  });
+  return (
+    <section aria-labelledby="profile-heading" className="page">
+      <h2 id="profile-heading">Household profile</h2>
+      {!household ? (
+        <form
+          className="stacked-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            createHome.mutate();
+          }}
+        >
+          <label htmlFor="household-name">Household name</label>
+          <input
+            id="household-name"
+            required
+            value={householdName}
+            onChange={(event) => setHouseholdName(event.target.value)}
+          />
+          <button type="submit">Create household</button>
+        </form>
+      ) : (
+        <>
+          <h3>{household.name}</h3>
+          <form
+            className="stacked-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              addMember.mutate();
+            }}
+          >
+            <label htmlFor="member-name">Member name</label>
+            <input
+              id="member-name"
+              required
+              value={memberName}
+              onChange={(event) => setMemberName(event.target.value)}
+            />
+            <button type="submit">Add member</button>
+          </form>
+          <ul aria-label="Household members">
+            {people.data?.map((person) => (
+              <li key={person.id}>
+                {person.name}
+                {person.dependent ? " — dependent" : ""}
+              </li>
+            ))}
+          </ul>
+          <label htmlFor="facts-as-of">Facts as of</label>
+          <input
+            id="facts-as-of"
+            type="date"
+            value={asOf}
+            onChange={(event) => setAsOf(event.target.value)}
+          />
+          <form
+            className="stacked-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              addFact.mutate();
+            }}
+          >
+            <label htmlFor="fact-key">Fact name</label>
+            <input
+              id="fact-key"
+              required
+              value={factKey}
+              onChange={(event) => setFactKey(event.target.value)}
+            />
+            <label htmlFor="fact-value">Value</label>
+            <input
+              id="fact-value"
+              required
+              value={factValue}
+              onChange={(event) => setFactValue(event.target.value)}
+            />
+            <button type="submit">Add dated fact</button>
+          </form>
+          <ul aria-label="Household facts">
+            {facts.data?.map((fact) => (
+              <li key={fact.id}>
+                {fact.factKey}: {String(fact.value)} ·{" "}
+                {Math.round(fact.confidence * 100)}% confidence
+                {fact.sensitivity === "sensitive" ? " · Sensitive" : ""}
+                {fact.verifiedAt === null ? " · Unverified" : ""}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}
+
 function NotFound(): React.JSX.Element {
   return <p role="alert">That page does not exist.</p>;
 }
@@ -906,6 +1066,11 @@ const csvImportRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/import",
 });
+const profileRoute = createRoute({
+  component: HouseholdProfile,
+  getParentRoute: () => rootRoute,
+  path: "/profile",
+});
 export const appRouter = createRouter({
   defaultNotFoundComponent: NotFound,
   routeTree: rootRoute.addChildren([
@@ -914,6 +1079,7 @@ export const appRouter = createRouter({
     transactionsRoute,
     categoriesRoute,
     csvImportRoute,
+    profileRoute,
   ]),
 });
 const queryClient = new QueryClient();

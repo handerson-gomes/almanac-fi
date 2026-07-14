@@ -12,6 +12,10 @@
     "./repositories": {
       "types": "./dist/repositories.d.ts",
       "import": "./dist/repositories.js"
+    },
+    "./households": {
+      "types": "./dist/households.d.ts",
+      "import": "./dist/households.js"
     }
   },
   "main": "./dist/index.js",

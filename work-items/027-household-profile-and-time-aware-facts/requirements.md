@@ -22,4 +22,8 @@ Test fact effective-date resolution and profile CRUD.
 
 ## Status
 
-Not started
+Complete
+
+## User experience impact
+
+Users can build a household profile, identify members and dependents, and record dated facts with their source, confidence, sensitivity, and verification state. They can view the facts that were true on a chosen date without losing prior values, while invalid or overlapping time periods are prevented.

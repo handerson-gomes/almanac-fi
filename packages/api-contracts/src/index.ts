@@ -427,6 +427,108 @@ export const incomeSummarySchema = z.object({
   reviewCount: z.number().int().nonnegative(),
 });
 
+export const householdSchema = z.object({
+  createdAt: z.iso.datetime(),
+  currency: currencySchema,
+  id: entityIdSchema,
+  name: z.string().trim().min(1).max(200),
+  updatedAt: z.iso.datetime(),
+});
+export const createHouseholdSchema = householdSchema.pick({
+  currency: true,
+  name: true,
+});
+export const updateHouseholdSchema = createHouseholdSchema
+  .partial()
+  .refine(
+    (value) => Object.keys(value).length > 0,
+    "Provide at least one field to update",
+  );
+export const householdListSchema = z.object({
+  items: z.array(householdSchema),
+});
+export const personSchema = z.object({
+  birthDate: z.iso.date().nullable(),
+  createdAt: z.iso.datetime(),
+  dependent: z.boolean(),
+  dependentUntil: z.iso.date().nullable(),
+  householdId: entityIdSchema,
+  id: entityIdSchema,
+  name: z.string().trim().min(1).max(200),
+  relationship: z.string().trim().min(1).max(100),
+  updatedAt: z.iso.datetime(),
+});
+export const createPersonSchema = personSchema
+  .pick({
+    birthDate: true,
+    dependent: true,
+    dependentUntil: true,
+    name: true,
+    relationship: true,
+  })
+  .partial({ birthDate: true, dependentUntil: true })
+  .extend({
+    birthDate: z.iso.date().nullable().default(null),
+    dependent: z.boolean().default(false),
+    dependentUntil: z.iso.date().nullable().default(null),
+  });
+export const personListSchema = z.object({ items: z.array(personSchema) });
+export const householdFactSchema = z.object({
+  confidence: z.number().min(0).max(1),
+  createdAt: z.iso.datetime(),
+  effectiveFrom: z.iso.date(),
+  effectiveTo: z.iso.date().nullable(),
+  factKey: z.string().trim().min(1).max(100),
+  householdId: entityIdSchema,
+  id: entityIdSchema,
+  personId: entityIdSchema.nullable(),
+  sensitivity: z.enum(["sensitive", "standard"]),
+  source: z.string().trim().min(1).max(200),
+  updatedAt: z.iso.datetime(),
+  value: z.union([z.boolean(), z.number(), z.string()]),
+  valueType: z.enum(["boolean", "date", "number", "string"]),
+  verifiedAt: z.iso.datetime().nullable(),
+  verifiedBy: z.string().nullable(),
+});
+export const createHouseholdFactSchema = householdFactSchema
+  .pick({
+    confidence: true,
+    effectiveFrom: true,
+    effectiveTo: true,
+    factKey: true,
+    personId: true,
+    sensitivity: true,
+    source: true,
+    value: true,
+    valueType: true,
+    verifiedAt: true,
+    verifiedBy: true,
+  })
+  .partial({
+    effectiveTo: true,
+    personId: true,
+    sensitivity: true,
+    verifiedAt: true,
+    verifiedBy: true,
+  })
+  .extend({
+    effectiveTo: z.iso.date().nullable().default(null),
+    personId: entityIdSchema.nullable().default(null),
+    sensitivity: z.enum(["sensitive", "standard"]).default("standard"),
+    verifiedAt: z.iso.datetime().nullable().default(null),
+    verifiedBy: z.string().nullable().default(null),
+  });
+export const householdFactListSchema = z.object({
+  items: z.array(householdFactSchema),
+});
+export const householdAsOfQuerySchema = z.object({
+  asOf: z.iso.date().optional(),
+});
+export type Household = z.infer<typeof householdSchema>;
+export type Person = z.infer<typeof personSchema>;
+export type HouseholdFact = z.infer<typeof householdFactSchema>;
+export type CreateHouseholdFact = z.input<typeof createHouseholdFactSchema>;
+
 export const problemSchema = z.object({
   detail: z.string(),
   instance: z.string().optional(),

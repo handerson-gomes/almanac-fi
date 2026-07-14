@@ -463,4 +463,59 @@ describe("SQLite foundation", () => {
     });
     database.close();
   });
+
+  test("resolves household facts as of a date and rejects overlaps", () => {
+    const database = createDatabase();
+    database.migrate();
+    const households = createUnitOfWork(database).households;
+    const household = households.create({
+      currency: "USD",
+      name: "Example household",
+    });
+    const person = households.createPerson({
+      birthDate: "2015-01-01",
+      dependent: true,
+      dependentUntil: "2033-01-01",
+      householdId: household.id,
+      name: "Child",
+      relationship: "child",
+    });
+    const base = {
+      confidence: 0.9,
+      factKey: "school",
+      householdId: household.id,
+      personId: person.id,
+      sensitivity: "sensitive" as const,
+      source: "user",
+      value: "Elementary",
+      valueType: "string" as const,
+      verifiedAt: null,
+      verifiedBy: null,
+    };
+    households.createFact({
+      ...base,
+      effectiveFrom: "2025-01-01",
+      effectiveTo: "2026-01-01",
+    });
+    households.createFact({
+      ...base,
+      effectiveFrom: "2026-01-01",
+      effectiveTo: null,
+      value: "Middle",
+    });
+    expect(households.listFacts(household.id, "2025-06-01")).toEqual([
+      expect.objectContaining({ value: "Elementary" }),
+    ]);
+    expect(() =>
+      households.createFact({
+        ...base,
+        effectiveFrom: "2025-06-01",
+        effectiveTo: null,
+      }),
+    ).toThrow(/overlap/);
+    expect(households.listPeople(household.id)[0]).toMatchObject({
+      dependent: true,
+    });
+    database.close();
+  });
 });

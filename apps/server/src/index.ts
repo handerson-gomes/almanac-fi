@@ -34,6 +34,14 @@ import {
   csvPreviewSchema,
   entityIdSchema,
   healthResponseSchema,
+  householdFactListSchema,
+  householdFactSchema,
+  householdAsOfQuerySchema,
+  householdListSchema,
+  householdSchema,
+  createHouseholdFactSchema,
+  createHouseholdSchema,
+  createPersonSchema,
   institutionConnectionListSchema,
   institutionConnectionSchema,
   incomeClassificationListSchema,
@@ -43,6 +51,8 @@ import {
   incomeSummarySchema,
   openApiDocument,
   paginationQuerySchema,
+  personListSchema,
+  personSchema,
   problem,
   readinessResponseSchema,
   transactionDetailsSchema,
@@ -57,6 +67,7 @@ import {
   updateCategorizationRuleSchema,
   updateCategorySchema,
   updateInstitutionConnectionSchema,
+  updateHouseholdSchema,
 } from "@almanac-fi/api-contracts";
 import { createDatabase, type AppDatabase } from "@almanac-fi/db";
 import { createUnitOfWork, inUnitOfWork } from "@almanac-fi/db/repositories";
@@ -510,6 +521,92 @@ export async function createServer(
   app.get("/income-summary", async () =>
     incomeSummarySchema.parse(unitOfWork.incomeClassifications.summary()),
   );
+  app.get("/households", async () =>
+    householdListSchema.parse({ items: unitOfWork.households.list() }),
+  );
+  app.post("/households", async (request, reply) => {
+    const input = parseRequest(createHouseholdSchema, request.body);
+    return reply
+      .status(201)
+      .send(householdSchema.parse(unitOfWork.households.create(input)));
+  });
+  app.patch("/households/:id", async (request) => {
+    const id = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const updated = unitOfWork.households.update(
+      id,
+      parseRequest(updateHouseholdSchema, request.body),
+    );
+    if (!updated) notFound("The household does not exist.");
+    return householdSchema.parse(updated);
+  });
+  app.get("/households/:id/people", async (request) => {
+    const id = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    if (!unitOfWork.households.findById(id))
+      notFound("The household does not exist.");
+    return personListSchema.parse({
+      items: unitOfWork.households.listPeople(id),
+    });
+  });
+  app.post("/households/:id/people", async (request, reply) => {
+    const householdId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    if (!unitOfWork.households.findById(householdId))
+      notFound("The household does not exist.");
+    const input = parseRequest(createPersonSchema, request.body);
+    return reply
+      .status(201)
+      .send(
+        personSchema.parse(
+          unitOfWork.households.createPerson({ ...input, householdId }),
+        ),
+      );
+  });
+  app.get("/households/:id/facts", async (request) => {
+    const householdId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const { asOf } = parseRequest(householdAsOfQuerySchema, request.query);
+    return householdFactListSchema.parse({
+      items: unitOfWork.households.listFacts(householdId, asOf),
+    });
+  });
+  app.post("/households/:id/facts", async (request, reply) => {
+    const householdId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const input = parseRequest(createHouseholdFactSchema, request.body);
+    try {
+      return reply
+        .status(201)
+        .send(
+          householdFactSchema.parse(
+            unitOfWork.households.createFact({ ...input, householdId }),
+          ),
+        );
+    } catch (error) {
+      if (error instanceof Error) badRequest(error.message);
+      throw error;
+    }
+  });
+  app.delete("/household-facts/:id", async (request, reply) => {
+    const id = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    if (!unitOfWork.households.deleteFact(id))
+      notFound("The household fact does not exist.");
+    return reply.status(204).send();
+  });
   app.post("/csv-imports/preview", async (request) => {
     const input = parseRequest(csvPreviewRequestSchema, request.body);
     if (!unitOfWork.accounts.findById(input.accountId))
