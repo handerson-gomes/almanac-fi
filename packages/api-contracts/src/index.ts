@@ -154,12 +154,20 @@ export const accountBalanceSchema = z.object({
   availableAmountMinor: z.number().int().safe().nullable(),
   createdAt: z.iso.datetime(),
   id: entityIdSchema,
+  isCurrent: z.boolean(),
+  replacesBalanceId: entityIdSchema.nullable(),
 });
 export const createAccountBalanceSchema = accountBalanceSchema.pick({
   amountMinor: true,
   asOf: true,
   availableAmountMinor: true,
 });
+export const updateAccountBalanceSchema = createAccountBalanceSchema
+  .partial()
+  .refine(
+    (value) => Object.keys(value).length > 0,
+    "Provide at least one field to update",
+  );
 export const accountListSchema = z.object({
   items: z.array(accountSchema),
   nextCursor: entityIdSchema.optional(),
@@ -181,6 +189,7 @@ export const accountBalanceListSchema = z.object({
   nextCursor: entityIdSchema.optional(),
 });
 export type Account = z.infer<typeof accountSchema>;
+export type AccountBalance = z.infer<typeof accountBalanceSchema>;
 export type CreateAccount = z.input<typeof createAccountSchema>;
 export type Institution = z.infer<typeof institutionSchema>;
 export type CreateInstitution = z.input<typeof createInstitutionSchema>;
@@ -336,6 +345,36 @@ export const transactionFilterSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   status: transactionStatusSchema.optional(),
 });
+const manualTransactionFieldsSchema = z.object({
+  accountId: entityIdSchema,
+  amountMinor: z.number().int().safe(),
+  categoryId: entityIdSchema.nullable().default(null),
+  currency: currencySchema,
+  merchant: z.string().trim().min(1).max(500).nullable().default(null),
+  payee: z.string().trim().min(1).max(500).nullable().default(null),
+  postedAt: z.iso.datetime().nullable().default(null),
+  sourceCategory: z.string().trim().min(1).max(200).nullable().default(null),
+  splits: z.array(createTransactionSplitSchema).default([]),
+  status: transactionStatusSchema.default("posted"),
+  transactionDate: z.iso.datetime(),
+});
+export const manualTransactionInputSchema =
+  manualTransactionFieldsSchema.refine(
+    (value) =>
+      value.splits.length === 0 ||
+      value.splits.reduce((sum, split) => sum + split.amountMinor, 0) ===
+        value.amountMinor,
+    "Transaction split totals must equal the parent transaction amount.",
+  );
+export const updateManualTransactionSchema = manualTransactionFieldsSchema
+  .partial()
+  .refine(
+    (value) => Object.keys(value).length > 0,
+    "Provide at least one field to update",
+  );
+export type ManualTransactionInput = z.input<
+  typeof manualTransactionInputSchema
+>;
 
 export const csvDateFormatSchema = z.enum([
   "DD/MM/YYYY",

@@ -4,6 +4,8 @@ import { join } from "node:path";
 
 import { expect, test } from "vitest";
 
+import { createDatabase } from "@almanac-fi/db";
+
 import { createServer } from "./index.js";
 
 test("health, readiness, and OpenAPI are deterministic", async () => {
@@ -317,5 +319,130 @@ test("previews and imports CSV rows idempotently with category rules", async () 
   expect(invalid.statusCode).toBe(400);
 
   await app.close();
+  await rm(dataHome, { force: true, recursive: true });
+});
+
+test("records and corrects manual actuals with retained provenance", async () => {
+  const dataHome = await mkdtemp(join(tmpdir(), "almanac-fi-server-"));
+  const database = createDatabase();
+  const app = await createServer({
+    config: { dataHome, host: "127.0.0.1", logLevel: "error", port: 0 },
+    database,
+  });
+  const institution = (
+    await app.inject({
+      method: "POST",
+      payload: { name: "Manual Bank" },
+      url: "/institutions",
+    })
+  ).json();
+  const account = (
+    await app.inject({
+      method: "POST",
+      payload: {
+        accountType: "checking",
+        currency: "USD",
+        institutionId: institution.id,
+        name: "Manual checking",
+      },
+      url: "/accounts",
+    })
+  ).json();
+  const dining = (
+    await app.inject({
+      method: "POST",
+      payload: { name: "Dining" },
+      url: "/categories",
+    })
+  ).json();
+  const groceries = (
+    await app.inject({
+      method: "POST",
+      payload: { name: "Groceries" },
+      url: "/categories",
+    })
+  ).json();
+  const balance = (
+    await app.inject({
+      method: "POST",
+      payload: {
+        amountMinor: 50_000,
+        asOf: "2026-07-01T00:00:00.000Z",
+        availableAmountMinor: 45_000,
+      },
+      url: `/accounts/${account.id}/balances`,
+    })
+  ).json();
+  const correctedBalance = await app.inject({
+    method: "PATCH",
+    payload: { amountMinor: 51_000 },
+    url: `/accounts/${account.id}/balances/${balance.id}`,
+  });
+  expect(correctedBalance.statusCode).toBe(200);
+  expect(correctedBalance.json()).toMatchObject({
+    amountMinor: 51_000,
+    replacesBalanceId: balance.id,
+  });
+  expect(
+    (
+      await app.inject({
+        method: "GET",
+        url: `/accounts/${account.id}/balances`,
+      })
+    ).json().items,
+  ).toEqual([
+    expect.objectContaining({ amountMinor: 51_000, isCurrent: true }),
+  ]);
+
+  const transaction = (
+    await app.inject({
+      method: "POST",
+      payload: {
+        accountId: account.id,
+        amountMinor: -1_000,
+        categoryId: null,
+        currency: "USD",
+        merchant: "Market",
+        payee: null,
+        postedAt: null,
+        sourceCategory: null,
+        splits: [
+          { amountMinor: -600, categoryId: dining.id, memo: "Lunch" },
+          { amountMinor: -400, categoryId: groceries.id, memo: "Staples" },
+        ],
+        status: "posted",
+        transactionDate: "2026-07-02T00:00:00.000Z",
+      },
+      url: "/transactions",
+    })
+  ).json();
+  expect(transaction.splits).toHaveLength(2);
+  const correctedTransaction = await app.inject({
+    method: "PATCH",
+    payload: { amountMinor: -1_100, splits: [] },
+    url: `/transactions/${transaction.transaction.id}`,
+  });
+  expect(correctedTransaction.statusCode).toBe(200);
+  expect(correctedTransaction.json()).toMatchObject({
+    transaction: {
+      amountMinor: -1_100,
+      replacesTransactionId: transaction.transaction.id,
+    },
+  });
+  expect(
+    (await app.inject({ method: "GET", url: "/transactions" })).json().items,
+  ).toEqual([
+    expect.objectContaining({ amountMinor: -1_100, isCurrent: true }),
+  ]);
+  expect(
+    database.sqlite
+      .prepare(
+        "SELECT COUNT(*) AS count FROM audit_events a JOIN source_records s ON s.id = a.source_record_id JOIN import_batches b ON b.id = s.batch_id WHERE b.source = 'manual'",
+      )
+      .get(),
+  ).toMatchObject({ count: 8 });
+
+  await app.close();
+  database.close();
   await rm(dataHome, { force: true, recursive: true });
 });

@@ -130,6 +130,8 @@ export type AccountBalance = Readonly<{
   availableAmountMinor: number | null;
   createdAt: string;
   id: string;
+  isCurrent: boolean;
+  replacesBalanceId: string | null;
 }>;
 export type Category = Readonly<{
   createdAt: string;
@@ -288,12 +290,24 @@ export interface AuditEventRepository {
 }
 
 export interface AccountRepository {
-  addBalance(input: Omit<AccountBalance, "createdAt" | "id">): AccountBalance;
+  addBalance(
+    input: Omit<
+      AccountBalance,
+      "createdAt" | "id" | "isCurrent" | "replacesBalanceId"
+    >,
+  ): AccountBalance;
   create(input: Omit<Account, "createdAt" | "id" | "updatedAt">): Account;
   delete(id: string): boolean;
   findById(id: string): Account | undefined;
   list(page?: PageRequest): Page<Account>;
   listBalances(accountId: string, page?: PageRequest): Page<AccountBalance>;
+  replaceBalance(
+    id: string,
+    input: Omit<
+      AccountBalance,
+      "accountId" | "createdAt" | "id" | "isCurrent" | "replacesBalanceId"
+    >,
+  ): AccountBalance | undefined;
   update(id: string, input: AccountUpdate): Account | undefined;
 }
 
@@ -458,10 +472,12 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
         ...input,
         createdAt: now(),
         id: randomUUID(),
+        isCurrent: true,
+        replacesBalanceId: null,
       };
       database.sqlite
         .prepare(
-          "INSERT INTO account_balances (id, account_id, amount_minor, available_amount_minor, as_of, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+          "INSERT INTO account_balances (id, account_id, amount_minor, available_amount_minor, as_of, is_current, replaces_balance_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .run(
           record.id,
@@ -469,6 +485,8 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
           record.amountMinor,
           record.availableAmountMinor,
           record.asOf,
+          1,
+          null,
           record.createdAt,
         );
       return record;
@@ -527,12 +545,48 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
       const limit = pageSize(request);
       const rows = database.sqlite
         .prepare(
-          "SELECT id, account_id AS accountId, amount_minor AS amountMinor, available_amount_minor AS availableAmountMinor, as_of AS asOf, created_at AS createdAt FROM account_balances WHERE account_id = ? AND id > ? ORDER BY id LIMIT ?",
+          "SELECT id, account_id AS accountId, amount_minor AS amountMinor, available_amount_minor AS availableAmountMinor, as_of AS asOf, is_current AS isCurrent, replaces_balance_id AS replacesBalanceId, created_at AS createdAt FROM account_balances WHERE account_id = ? AND is_current = 1 AND id > ? ORDER BY id LIMIT ?",
         )
         .all(accountId, request?.cursor ?? "", limit + 1) as AccountBalance[];
-      const items = rows.slice(0, limit);
+      const items = rows
+        .slice(0, limit)
+        .map((row) => ({ ...row, isCurrent: Boolean(row.isCurrent) }));
       const nextCursor = rows.length > limit ? items.at(-1)?.id : undefined;
       return nextCursor ? { items, nextCursor } : { items };
+    },
+    replaceBalance(id, input) {
+      const current = database.sqlite
+        .prepare(
+          "SELECT id, account_id AS accountId, amount_minor AS amountMinor, available_amount_minor AS availableAmountMinor, as_of AS asOf, is_current AS isCurrent, replaces_balance_id AS replacesBalanceId, created_at AS createdAt FROM account_balances WHERE id = ? AND is_current = 1",
+        )
+        .get(id) as AccountBalance | undefined;
+      if (!current) return undefined;
+      database.sqlite
+        .prepare("UPDATE account_balances SET is_current = 0 WHERE id = ?")
+        .run(id);
+      const record: AccountBalance = {
+        ...input,
+        accountId: current.accountId,
+        createdAt: now(),
+        id: randomUUID(),
+        isCurrent: true,
+        replacesBalanceId: id,
+      };
+      database.sqlite
+        .prepare(
+          "INSERT INTO account_balances (id, account_id, amount_minor, available_amount_minor, as_of, is_current, replaces_balance_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          record.id,
+          record.accountId,
+          record.amountMinor,
+          record.availableAmountMinor,
+          record.asOf,
+          1,
+          record.replacesBalanceId,
+          record.createdAt,
+        );
+      return record;
     },
     update(id, input) {
       const current = accounts.findById(id);

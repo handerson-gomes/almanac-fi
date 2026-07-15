@@ -371,6 +371,16 @@ const migrations = [
     `,
     down: `DROP TABLE IF EXISTS budget_lines; DROP INDEX IF EXISTS budget_periods_active_unique; DROP TABLE IF EXISTS budget_periods; DROP TABLE IF EXISTS budgets;`,
   },
+  {
+    id: "0012_manual_entry_revisions",
+    up: `
+      ALTER TABLE account_balances ADD COLUMN is_current INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE account_balances ADD COLUMN replaces_balance_id TEXT REFERENCES account_balances(id);
+      CREATE INDEX IF NOT EXISTS account_balances_current_as_of
+        ON account_balances(account_id, as_of) WHERE is_current = 1;
+    `,
+    down: `DROP INDEX IF EXISTS account_balances_current_as_of;`,
+  },
 ] as const;
 
 export type AppDatabase = Readonly<{

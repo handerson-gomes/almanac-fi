@@ -28,7 +28,9 @@ import {
   createPerson,
   createCsvMapping,
   createAccount,
+  createAccountBalance,
   createInstitution,
+  createManualTransaction,
   deleteInstitution,
   getCsvMappings,
   getAccounts,
@@ -440,6 +442,7 @@ function CsvImport(): React.JSX.Element {
 }
 
 function Transactions(): React.JSX.Element {
+  const queryClient = useQueryClient();
   const transactions = useInfiniteQuery<
     TransactionPage,
     Error,
@@ -461,6 +464,16 @@ function Transactions(): React.JSX.Element {
     queryKey: ["categories"],
   });
   const [selectedId, setSelectedId] = useState<string>();
+  const [manualAccountId, setManualAccountId] = useState("");
+  const [manualAmountMinor, setManualAmountMinor] = useState("");
+  const [manualCategoryId, setManualCategoryId] = useState("");
+  const [manualDescription, setManualDescription] = useState("");
+  const [manualSplits, setManualSplits] = useState<
+    readonly { amountMinor: string; categoryId: string; memo: string }[]
+  >([]);
+  const [manualDate, setManualDate] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const details = useQuery({
     enabled: selectedId !== undefined,
@@ -470,6 +483,37 @@ function Transactions(): React.JSX.Element {
   const accountNames = new Map(
     accounts.data?.map((account) => [account.id, account.name]),
   );
+  const createManual = useMutation({
+    mutationFn: () => {
+      const account = accounts.data?.find(
+        (candidate) => candidate.id === manualAccountId,
+      );
+      if (!account) throw new Error("Select an account.");
+      return createManualTransaction({
+        accountId: account.id,
+        amountMinor: Number(manualAmountMinor),
+        categoryId: manualCategoryId || null,
+        currency: account.currency,
+        merchant: manualDescription,
+        payee: null,
+        postedAt: null,
+        sourceCategory: null,
+        splits: manualSplits.map((split) => ({
+          amountMinor: Number(split.amountMinor),
+          categoryId: split.categoryId || null,
+          memo: split.memo || null,
+        })),
+        status: "posted",
+        transactionDate: new Date(`${manualDate}T00:00:00.000Z`).toISOString(),
+      });
+    },
+    onSuccess: async () => {
+      setManualAmountMinor("");
+      setManualDescription("");
+      setManualSplits([]);
+      await queryClient.invalidateQueries({ queryKey: ["transactions"] });
+    },
+  });
   const categoryNames = new Map(
     categories.data?.map((category) => [category.id, category.name]),
   );
@@ -502,6 +546,159 @@ function Transactions(): React.JSX.Element {
   return (
     <section aria-labelledby="transactions-heading" className="page">
       <h2 id="transactions-heading">Transactions</h2>
+      <form
+        className="stacked-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          createManual.mutate();
+        }}
+      >
+        <h3>Record a transaction</h3>
+        <label htmlFor="manual-transaction-account">Account</label>
+        <select
+          id="manual-transaction-account"
+          onChange={(event) => setManualAccountId(event.target.value)}
+          required
+          value={manualAccountId}
+        >
+          <option value="">Select an account</option>
+          {accounts.data?.map((account) => (
+            <option key={account.id} value={account.id}>
+              {account.name} ({account.currency})
+            </option>
+          ))}
+        </select>
+        <label htmlFor="manual-transaction-date">Transaction date</label>
+        <input
+          id="manual-transaction-date"
+          onChange={(event) => setManualDate(event.target.value)}
+          required
+          type="date"
+          value={manualDate}
+        />
+        <label htmlFor="manual-transaction-description">Description</label>
+        <input
+          id="manual-transaction-description"
+          onChange={(event) => setManualDescription(event.target.value)}
+          required
+          value={manualDescription}
+        />
+        <label htmlFor="manual-transaction-amount">Amount (minor units)</label>
+        <input
+          id="manual-transaction-amount"
+          onChange={(event) => setManualAmountMinor(event.target.value)}
+          required
+          step="1"
+          type="number"
+          value={manualAmountMinor}
+        />
+        <label htmlFor="manual-transaction-category">Category</label>
+        <select
+          id="manual-transaction-category"
+          onChange={(event) => setManualCategoryId(event.target.value)}
+          value={manualCategoryId}
+        >
+          <option value="">Uncategorized</option>
+          {categories.data
+            ?.filter((category) => category.status === "active")
+            .map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
+        </select>
+        <fieldset>
+          <legend>Splits (optional)</legend>
+          {manualSplits.map((split, index) => (
+            <div key={index}>
+              <label htmlFor={`manual-split-amount-${index}`}>
+                Amount (minor units)
+              </label>
+              <input
+                id={`manual-split-amount-${index}`}
+                onChange={(event) =>
+                  setManualSplits((current) =>
+                    current.map((item, itemIndex) =>
+                      itemIndex === index
+                        ? { ...item, amountMinor: event.target.value }
+                        : item,
+                    ),
+                  )
+                }
+                required
+                step="1"
+                type="number"
+                value={split.amountMinor}
+              />
+              <label htmlFor={`manual-split-category-${index}`}>Category</label>
+              <select
+                id={`manual-split-category-${index}`}
+                onChange={(event) =>
+                  setManualSplits((current) =>
+                    current.map((item, itemIndex) =>
+                      itemIndex === index
+                        ? { ...item, categoryId: event.target.value }
+                        : item,
+                    ),
+                  )
+                }
+                value={split.categoryId}
+              >
+                <option value="">Uncategorized</option>
+                {categories.data
+                  ?.filter((category) => category.status === "active")
+                  .map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+              </select>
+              <label htmlFor={`manual-split-memo-${index}`}>Memo</label>
+              <input
+                id={`manual-split-memo-${index}`}
+                maxLength={500}
+                onChange={(event) =>
+                  setManualSplits((current) =>
+                    current.map((item, itemIndex) =>
+                      itemIndex === index
+                        ? { ...item, memo: event.target.value }
+                        : item,
+                    ),
+                  )
+                }
+                value={split.memo}
+              />
+              <button
+                onClick={() =>
+                  setManualSplits((current) =>
+                    current.filter((_, itemIndex) => itemIndex !== index),
+                  )
+                }
+                type="button"
+              >
+                Remove split
+              </button>
+            </div>
+          ))}
+          <button
+            onClick={() =>
+              setManualSplits((current) => [
+                ...current,
+                { amountMinor: "", categoryId: "", memo: "" },
+              ])
+            }
+            type="button"
+          >
+            Add split
+          </button>
+        </fieldset>
+        <button disabled={createManual.isPending} type="submit">
+          Record transaction
+        </button>
+        {createManual.isError ? (
+          <p role="alert">{createManual.error.message}</p>
+        ) : null}
+      </form>
       {transactions.isPending ? (
         <p role="status">Loading transactions…</p>
       ) : null}
@@ -915,6 +1112,11 @@ function Accounts(): React.JSX.Element {
     name: "",
   });
   const [newInstitutionName, setNewInstitutionName] = useState("");
+  const [balanceAccountId, setBalanceAccountId] = useState("");
+  const [balanceAmountMinor, setBalanceAmountMinor] = useState("");
+  const [balanceAsOf, setBalanceAsOf] = useState(
+    new Date().toISOString().slice(0, 16),
+  );
   const accounts = useQuery({ queryFn: getAccounts, queryKey: ["accounts"] });
   const institutions = useQuery({
     queryFn: getInstitutions,
@@ -934,6 +1136,15 @@ function Accounts(): React.JSX.Element {
       setForm((current) => ({ ...current, name: "" }));
       await queryClient.invalidateQueries({ queryKey: ["accounts"] });
     },
+  });
+  const addBalance = useMutation({
+    mutationFn: () =>
+      createAccountBalance(balanceAccountId, {
+        amountMinor: Number(balanceAmountMinor),
+        asOf: new Date(balanceAsOf).toISOString(),
+        availableAmountMinor: null,
+      }),
+    onSuccess: () => setBalanceAmountMinor(""),
   });
   return (
     <section aria-labelledby="accounts-heading" className="page">
@@ -1014,6 +1225,52 @@ function Accounts(): React.JSX.Element {
         <button disabled={create.isPending} type="submit">
           Add account
         </button>
+      </form>
+      <form
+        className="stacked-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          addBalance.mutate();
+        }}
+      >
+        <h3>Record a dated balance</h3>
+        <label htmlFor="manual-balance-account">Account</label>
+        <select
+          id="manual-balance-account"
+          onChange={(event) => setBalanceAccountId(event.target.value)}
+          required
+          value={balanceAccountId}
+        >
+          <option value="">Select an account</option>
+          {accounts.data?.map((account) => (
+            <option key={account.id} value={account.id}>
+              {account.name}
+            </option>
+          ))}
+        </select>
+        <label htmlFor="manual-balance-amount">Balance (minor units)</label>
+        <input
+          id="manual-balance-amount"
+          onChange={(event) => setBalanceAmountMinor(event.target.value)}
+          required
+          step="1"
+          type="number"
+          value={balanceAmountMinor}
+        />
+        <label htmlFor="manual-balance-as-of">As of</label>
+        <input
+          id="manual-balance-as-of"
+          onChange={(event) => setBalanceAsOf(event.target.value)}
+          required
+          type="datetime-local"
+          value={balanceAsOf}
+        />
+        <button disabled={addBalance.isPending} type="submit">
+          Record balance
+        </button>
+        {addBalance.isError ? (
+          <p role="alert">{addBalance.error.message}</p>
+        ) : null}
       </form>
       {create.isError ? <p role="alert">{create.error.message}</p> : null}
       {accounts.isPending ? <p role="status">Loading accounts…</p> : null}

@@ -180,6 +180,10 @@ export const accountBalances = sqliteTable("account_balances", {
   availableAmountMinor: integer("available_amount_minor"),
   createdAt: text("created_at").notNull(),
   id: text("id").primaryKey(),
+  isCurrent: integer("is_current", { mode: "boolean" }).notNull(),
+  replacesBalanceId: text("replaces_balance_id").references(
+    (): AnySQLiteColumn => accountBalances.id,
+  ),
 });
 
 export const categories = sqliteTable("categories", {

@@ -103,6 +103,9 @@ import {
   transactionDetailsSchema,
   transactionFilterSchema,
   transactionListSchema,
+  manualTransactionInputSchema,
+  updateAccountBalanceSchema,
+  updateManualTransactionSchema,
   transferMatchDecisionSchema,
   transferMatchListSchema,
   transferMatchSchema,
@@ -241,6 +244,61 @@ export async function createServer(
   app.get("/openapi.json", async () => openApiDocument);
   const unitOfWork = createUnitOfWork(database);
   unitOfWork.transactions.assignUncategorizedSourceCategories();
+  const manualProvenance = (
+    work: ReturnType<typeof createUnitOfWork>,
+    entityType: string,
+    operation: string,
+    entityId: string,
+    before: unknown,
+    after: unknown,
+  ): void => {
+    const payload = JSON.stringify(after);
+    const batch = work.importBatches.create({
+      actor: "user",
+      checksum: checksum(`manual:${randomUUID()}`),
+      source: "manual",
+      status: "completed",
+    });
+    const source = work.sourceRecords.create({
+      batchId: batch.id,
+      checksum: checksum(`manual:${entityType}:${entityId}:${randomUUID()}`),
+      rawPayload: payload,
+      sourceType: "manual-entry",
+    });
+    work.auditEvents.append({
+      actor: "user",
+      afterJson: payload,
+      beforeJson: before === null ? null : JSON.stringify(before),
+      entityId,
+      entityType,
+      operation,
+      sourceRecordId: source.id,
+    });
+  };
+  const assertManualTransactionReferences = (
+    work: ReturnType<typeof createUnitOfWork>,
+    input: {
+      accountId: string;
+      categoryId: string | null;
+      currency: string;
+      splits: readonly { categoryId: string | null }[];
+    },
+  ): void => {
+    const account = work.accounts.findById(input.accountId);
+    if (!account) notFound("The account does not exist.");
+    if (account.currency !== input.currency)
+      badRequest("Transaction currency must match the account currency.");
+    for (const categoryId of [
+      input.categoryId,
+      ...input.splits.map((split) => split.categoryId),
+    ]) {
+      if (categoryId === null) continue;
+      const category = work.categories.findById(categoryId);
+      if (!category) notFound("The category does not exist.");
+      if (category.status === "archived")
+        badRequest("Transactions cannot use archived categories.");
+    }
+  };
   app.get("/accounts", async (request) => {
     const page = parseRequest(paginationQuerySchema, request.query);
     return accountListSchema.parse(unitOfWork.accounts.list(page));
@@ -275,10 +333,22 @@ export async function createServer(
       ) {
         badRequest("The external connection belongs to another institution.");
       }
-      const account = unitOfWork.accounts.create({
-        ...input,
-        externalConnectionId: input.externalConnectionId ?? null,
-        externalId: input.externalId ?? null,
+      const account = inUnitOfWork(database, (work) => {
+        const created = work.accounts.create({
+          ...input,
+          externalConnectionId: input.externalConnectionId ?? null,
+          externalId: input.externalId ?? null,
+        });
+        if (!created.externalConnectionId)
+          manualProvenance(
+            work,
+            "account",
+            "create",
+            created.id,
+            null,
+            created,
+          );
+        return created;
       });
       return reply.status(201).send(accountSchema.parse(account));
     },
@@ -333,7 +403,19 @@ export async function createServer(
     ) {
       badRequest("The external connection belongs to another institution.");
     }
-    const account = unitOfWork.accounts.update(id, input);
+    const account = inUnitOfWork(database, (work) => {
+      const updated = work.accounts.update(id, input);
+      if (updated && !updated.externalConnectionId)
+        manualProvenance(
+          work,
+          "account",
+          "update",
+          updated.id,
+          current,
+          updated,
+        );
+      return updated;
+    });
     if (!account) notFound("The account does not exist.");
     return accountSchema.parse(account);
   });
@@ -366,8 +448,63 @@ export async function createServer(
     if (!unitOfWork.accounts.findById(accountId))
       notFound("The account does not exist.");
     const input = parseRequest(createAccountBalanceSchema, request.body);
-    const balance = unitOfWork.accounts.addBalance({ accountId, ...input });
+    const balance = inUnitOfWork(database, (work) => {
+      const created = work.accounts.addBalance({ accountId, ...input });
+      manualProvenance(
+        work,
+        "account_balance",
+        "create",
+        created.id,
+        null,
+        created,
+      );
+      return created;
+    });
     return reply.status(201).send(accountBalanceSchema.parse(balance));
+  });
+  app.patch("/accounts/:accountId/balances/:balanceId", async (request) => {
+    const accountId = parseRequest(
+      entityIdSchema,
+      (request.params as { accountId?: unknown }).accountId,
+    );
+    const balanceId = parseRequest(
+      entityIdSchema,
+      (request.params as { balanceId?: unknown }).balanceId,
+    );
+    const input = parseRequest(updateAccountBalanceSchema, request.body);
+    const current = database.sqlite
+      .prepare(
+        "SELECT id, account_id AS accountId, amount_minor AS amountMinor, available_amount_minor AS availableAmountMinor, as_of AS asOf, is_current AS isCurrent, replaces_balance_id AS replacesBalanceId, created_at AS createdAt FROM account_balances WHERE id = ? AND account_id = ? AND is_current = 1",
+      )
+      .get(balanceId, accountId) as
+      | {
+          amountMinor: number;
+          asOf: string;
+          availableAmountMinor: number | null;
+        }
+      | undefined;
+    if (!current) notFound("The current account balance does not exist.");
+    const balance = inUnitOfWork(database, (work) => {
+      const replacement = work.accounts.replaceBalance(balanceId, {
+        amountMinor: input.amountMinor ?? current.amountMinor,
+        asOf: input.asOf ?? current.asOf,
+        availableAmountMinor:
+          input.availableAmountMinor === undefined
+            ? current.availableAmountMinor
+            : input.availableAmountMinor,
+      });
+      if (!replacement) notFound("The current account balance does not exist.");
+      manualProvenance(
+        work,
+        "account_balance",
+        "correct",
+        replacement.id,
+        current,
+        replacement,
+      );
+      return replacement;
+    });
+    return accountBalanceSchema.parse(balance);
   });
   app.get("/institutions", async (request) => {
     const page = parseRequest(paginationQuerySchema, request.query);
@@ -375,10 +512,21 @@ export async function createServer(
   });
   app.post("/institutions", async (request, reply) => {
     const input = parseRequest(createInstitutionSchema, request.body);
-    const institution = unitOfWork.institutions.create({
-      domain: input.domain ?? null,
-      name: input.name,
-      websiteUrl: input.websiteUrl ?? null,
+    const institution = inUnitOfWork(database, (work) => {
+      const created = work.institutions.create({
+        domain: input.domain ?? null,
+        name: input.name,
+        websiteUrl: input.websiteUrl ?? null,
+      });
+      manualProvenance(
+        work,
+        "institution",
+        "create",
+        created.id,
+        null,
+        created,
+      );
+      return created;
     });
     return reply.status(201).send(institutionSchema.parse(institution));
   });
@@ -397,7 +545,20 @@ export async function createServer(
       (request.params as { id?: unknown }).id,
     );
     const input = parseRequest(updateInstitutionSchema, request.body);
-    const institution = unitOfWork.institutions.update(id, input);
+    const previous = unitOfWork.institutions.findById(id);
+    const institution = inUnitOfWork(database, (work) => {
+      const updated = work.institutions.update(id, input);
+      if (updated)
+        manualProvenance(
+          work,
+          "institution",
+          "update",
+          updated.id,
+          previous,
+          updated,
+        );
+      return updated;
+    });
     if (!institution) notFound("The institution does not exist.");
     return institutionSchema.parse(institution);
   });
@@ -491,13 +652,22 @@ export async function createServer(
     if (parentId !== null && !unitOfWork.categories.findById(parentId)) {
       notFound("The parent category does not exist.");
     }
-    return reply
-      .status(201)
-      .send(
-        categorySchema.parse(
-          unitOfWork.categories.create({ ...input, parentId }),
-        ),
-      );
+    return reply.status(201).send(
+      categorySchema.parse(
+        inUnitOfWork(database, (work) => {
+          const created = work.categories.create({ ...input, parentId });
+          manualProvenance(
+            work,
+            "category",
+            "create",
+            created.id,
+            null,
+            created,
+          );
+          return created;
+        }),
+      ),
+    );
   });
   app.patch("/categories/:id", async (request) => {
     const id = parseRequest(
@@ -513,7 +683,20 @@ export async function createServer(
       notFound("The parent category does not exist.");
     }
     try {
-      const category = unitOfWork.categories.update(id, input);
+      const previous = unitOfWork.categories.findById(id);
+      const category = inUnitOfWork(database, (work) => {
+        const updated = work.categories.update(id, input);
+        if (updated)
+          manualProvenance(
+            work,
+            "category",
+            "update",
+            updated.id,
+            previous,
+            updated,
+          );
+        return updated;
+      });
       if (!category) notFound("The category does not exist.");
       return categorySchema.parse(category);
     } catch (error) {
@@ -603,6 +786,122 @@ export async function createServer(
     return transactionListSchema.parse(
       unitOfWork.transactions.list(filter, filter),
     );
+  });
+  app.post(
+    "/transactions",
+    { config: { statusCode: 201 } },
+    async (request, reply) => {
+      const input = parseRequest(manualTransactionInputSchema, request.body);
+      const details = inUnitOfWork(database, (work) => {
+        assertManualTransactionReferences(work, input);
+        const sourceIdentity = `manual:${randomUUID()}`;
+        const batch = work.importBatches.create({
+          actor: "user",
+          checksum: checksum(`manual:${sourceIdentity}`),
+          source: "manual",
+          status: "completed",
+        });
+        const source = work.sourceRecords.create({
+          batchId: batch.id,
+          checksum: checksum(`manual-transaction:${sourceIdentity}`),
+          rawPayload: JSON.stringify(input),
+          sourceType: "manual-entry",
+        });
+        const created = work.transactions.create(
+          {
+            ...input,
+            sourceIdentity,
+            sourceRecordId: source.id,
+          },
+          input.splits,
+        );
+        work.auditEvents.append({
+          actor: "user",
+          afterJson: JSON.stringify(created),
+          beforeJson: null,
+          entityId: created.transaction.id,
+          entityType: "transaction",
+          operation: "create",
+          sourceRecordId: source.id,
+        });
+        return created;
+      });
+      return reply.status(201).send(transactionDetailsSchema.parse(details));
+    },
+  );
+  app.patch("/transactions/:id", async (request) => {
+    const id = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const input = parseRequest(updateManualTransactionSchema, request.body);
+    const current = unitOfWork.transactions.findById(id);
+    if (!current || !current.isCurrent)
+      notFound("The current transaction does not exist.");
+    const currentDetails = unitOfWork.transactions.getDetails(id);
+    const details = inUnitOfWork(database, (work) => {
+      const merged = {
+        accountId: input.accountId ?? current.accountId,
+        amountMinor: input.amountMinor ?? current.amountMinor,
+        categoryId:
+          input.categoryId === undefined
+            ? current.categoryId
+            : input.categoryId,
+        currency: input.currency ?? current.currency,
+        merchant:
+          input.merchant === undefined ? current.merchant : input.merchant,
+        payee: input.payee === undefined ? current.payee : input.payee,
+        postedAt:
+          input.postedAt === undefined ? current.postedAt : input.postedAt,
+        sourceCategory:
+          input.sourceCategory === undefined
+            ? current.sourceCategory
+            : input.sourceCategory,
+        splits: input.splits ?? currentDetails?.splits ?? [],
+        status: input.status ?? current.status,
+        transactionDate: input.transactionDate ?? current.transactionDate,
+      };
+      assertManualTransactionReferences(work, merged);
+      if (
+        merged.splits.length > 0 &&
+        merged.splits.reduce((sum, split) => sum + split.amountMinor, 0) !==
+          merged.amountMinor
+      )
+        badRequest(
+          "Transaction split totals must equal the parent transaction amount.",
+        );
+      const batch = work.importBatches.create({
+        actor: "user",
+        checksum: checksum(`manual:transaction-correction:${randomUUID()}`),
+        source: "manual",
+        status: "completed",
+      });
+      const source = work.sourceRecords.create({
+        batchId: batch.id,
+        checksum: checksum(`manual-transaction-correction:${randomUUID()}`),
+        rawPayload: JSON.stringify(merged),
+        sourceType: "manual-correction",
+      });
+      const corrected = work.transactions.replaceCurrent(
+        {
+          ...merged,
+          sourceIdentity: current.sourceIdentity,
+          sourceRecordId: source.id,
+        },
+        merged.splits,
+      );
+      work.auditEvents.append({
+        actor: "user",
+        afterJson: JSON.stringify(corrected),
+        beforeJson: JSON.stringify(currentDetails ?? current),
+        entityId: corrected.transaction.id,
+        entityType: "transaction",
+        operation: "correct",
+        sourceRecordId: source.id,
+      });
+      return corrected;
+    });
+    return transactionDetailsSchema.parse(details);
   });
   app.get("/transactions/:id", async (request) => {
     const id = parseRequest(

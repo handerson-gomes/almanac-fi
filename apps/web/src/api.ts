@@ -1,5 +1,6 @@
 import {
   accountListSchema,
+  accountBalanceSchema,
   accountImportReviewListSchema,
   accountImportReviewSchema,
   accountSchema,
@@ -36,6 +37,7 @@ import {
   type HouseholdFact,
   type Person,
   type Account,
+  type AccountBalance,
   type AccountImportReview,
   type Budget,
   type BudgetCalculation,
@@ -55,12 +57,15 @@ import {
   providerConnectionListSchema,
   transactionListSchema,
   transactionDetailsSchema,
+  manualTransactionInputSchema,
+  type ManualTransactionInput,
   type Transaction,
   type TransactionDetails,
 } from "@almanac-fi/api-contracts";
 
 export type {
   Account,
+  AccountBalance,
   AccountImportReview,
   Budget,
   BudgetCalculation,
@@ -79,6 +84,7 @@ export type {
   ProviderConnection,
   Transaction,
   TransactionDetails,
+  ManualTransactionInput,
   Household,
   HouseholdFact,
   Person,
@@ -118,6 +124,22 @@ export async function getAccounts(): Promise<readonly Account[]> {
 export async function createAccount(input: CreateAccount): Promise<Account> {
   return accountSchema.parse(
     await requestJson("/api/accounts", {
+      body: JSON.stringify(input),
+      method: "POST",
+    }),
+  );
+}
+
+export async function createAccountBalance(
+  accountId: string,
+  input: Readonly<{
+    amountMinor: number;
+    asOf: string;
+    availableAmountMinor: number | null;
+  }>,
+): Promise<AccountBalance> {
+  return accountBalanceSchema.parse(
+    await requestJson(`/api/accounts/${accountId}/balances`, {
       body: JSON.stringify(input),
       method: "POST",
     }),
@@ -270,6 +292,17 @@ export async function getTransactions(
 export async function getTransaction(id: string): Promise<TransactionDetails> {
   return transactionDetailsSchema.parse(
     await requestJson(`/api/transactions/${id}`),
+  );
+}
+
+export async function createManualTransaction(
+  input: ManualTransactionInput,
+): Promise<TransactionDetails> {
+  return transactionDetailsSchema.parse(
+    await requestJson("/api/transactions", {
+      body: JSON.stringify(manualTransactionInputSchema.parse(input)),
+      method: "POST",
+    }),
   );
 }
 

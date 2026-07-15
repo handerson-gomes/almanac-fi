@@ -58,7 +58,7 @@ This is the dependency-ordered implementation backlog for Almanac FI. Each item 
 | 022  | [SimpleFIN connection flow](./022-simplefin-connection-flow/requirements.md)                                                  | Deferred    | 015, 016a                          |
 | 023  | [SimpleFIN sync and sync health](./023-simplefin-sync-and-sync-health/requirements.md)                                        | Deferred    | 014, 016a, 017, 019, 022           |
 | 023a | [Application UX foundation](./023a-application-ux-foundation/requirements.md)                                                  | Complete    | 010, 016, 017, 018, 021            |
-| 024  | [Manual financial data entry](./024-manual-financial-data-entry/requirements.md)                                              | Not started | 006, 016a, 017, 018                |
+| 024  | [Manual financial data entry](./024-manual-financial-data-entry/requirements.md)                                              | Complete    | 006, 016a, 017, 018                |
 | 025  | [Transfer matching and review](./025-transfer-matching-and-review/requirements.md)                                            | Complete    | 006, 017, 024                      |
 | 025a | [Categorization engine and review queue](./025a-categorization-engine-and-review-queue/requirements.md)                       | Complete    | 017, 018, 025                      |
 | 026  | [Income classification](./026-income-classification/requirements.md)                                                          | Complete    | 017, 018, 025, 025a                |
