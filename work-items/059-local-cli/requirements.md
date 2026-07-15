@@ -22,4 +22,4 @@ Run CLI command integration tests and shell completion/help checks.
 
 ## Status
 
-Not started
+Deferred

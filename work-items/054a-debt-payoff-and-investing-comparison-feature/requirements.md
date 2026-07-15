@@ -14,7 +14,7 @@ All rates, returns, taxes, and contribution assumptions are visible; debt paymen
 
 ## Dependencies
 
-012, 028a, 028b, 033, 034, 035, 036, 042a, 045, 046, 049
+012, 016a, 028a, 028b, 032, 034, 035, 036, 037, 038, 042a, 045, 046, 049
 
 ## Verification
 
@@ -22,4 +22,4 @@ Run deterministic amortization and comparison fixtures, allocation-conflict/appr
 
 ## Status
 
-Not started
+Deferred

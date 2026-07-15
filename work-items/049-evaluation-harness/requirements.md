@@ -22,4 +22,4 @@ Run a sample evaluation suite and validate report schema.
 
 ## Status
 
-Not started
+Deferred

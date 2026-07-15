@@ -38,28 +38,71 @@ const migrations = [
   {
     id: "0002_accounts_and_institution_connections",
     up: `
-      CREATE TABLE IF NOT EXISTS institution_connections (
+      CREATE TABLE IF NOT EXISTS institutions (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        website_url TEXT,
+        domain TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS institutions_domain_unique
+        ON institutions(lower(domain)) WHERE domain IS NOT NULL;
+      CREATE TABLE IF NOT EXISTS provider_connections (
         id TEXT PRIMARY KEY,
         provider TEXT NOT NULL,
-        institution_name TEXT NOT NULL,
-        institution_url TEXT,
-        external_id TEXT,
+        provider_namespace TEXT NOT NULL,
         status TEXT NOT NULL CHECK (status IN ('connected', 'disconnected', 'error', 'needs_reauth')),
         secret_key TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS external_institution_connections (
+        id TEXT PRIMARY KEY,
+        provider_connection_id TEXT NOT NULL REFERENCES provider_connections(id),
+        institution_id TEXT NOT NULL REFERENCES institutions(id) ON DELETE CASCADE,
+        remote_connection_id TEXT NOT NULL,
+        remote_name TEXT NOT NULL,
+        remote_organization_id TEXT,
+        remote_organization_url TEXT,
+        status TEXT NOT NULL CHECK (status IN ('connected', 'disconnected', 'error', 'needs_reauth')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(provider_connection_id, remote_connection_id)
+      );
       CREATE TABLE IF NOT EXISTS accounts (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
-        account_type TEXT NOT NULL CHECK (account_type IN ('cash', 'checking', 'credit_card', 'investment', 'loan', 'other', 'savings')),
+        account_type TEXT NOT NULL CHECK (account_type IN ('cash', 'checking', 'savings', 'money_market', 'certificate_of_deposit', 'credit_card', 'mortgage', 'auto_loan', 'student_loan', 'personal_loan', 'other_loan', 'taxable_brokerage', 'traditional_ira', 'roth_ira', 'traditional_sep_ira', 'roth_sep_ira', 'traditional_simple_ira', 'roth_simple_ira', 'traditional_401k', 'roth_401k', 'mixed_401k', 'traditional_403b', 'roth_403b', 'mixed_403b', 'traditional_457b', 'roth_457b', 'mixed_457b', 'pension', 'other_retirement', 'hsa', '529', 'other', 'unclassified')),
         currency TEXT NOT NULL CHECK (currency GLOB '[A-Z][A-Z][A-Z]'),
         status TEXT NOT NULL CHECK (status IN ('active', 'closed', 'hidden')),
-        connection_id TEXT REFERENCES institution_connections(id) ON DELETE SET NULL,
+        institution_id TEXT NOT NULL REFERENCES institutions(id),
+        external_connection_id TEXT REFERENCES external_institution_connections(id),
         external_id TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        UNIQUE(connection_id, external_id)
+        UNIQUE(external_connection_id, external_id),
+        CHECK ((external_connection_id IS NULL AND external_id IS NULL) OR
+               (external_connection_id IS NOT NULL AND external_id IS NOT NULL))
+      );
+      CREATE TABLE IF NOT EXISTS account_import_reviews (
+        id TEXT PRIMARY KEY,
+        provider_connection_id TEXT NOT NULL REFERENCES provider_connections(id),
+        remote_connection_id TEXT NOT NULL,
+        remote_connection_name TEXT NOT NULL,
+        remote_organization_id TEXT,
+        remote_organization_url TEXT,
+        remote_account_id TEXT NOT NULL,
+        account_name TEXT NOT NULL,
+        currency TEXT NOT NULL CHECK (currency GLOB '[A-Z][A-Z][A-Z]'),
+        account_type TEXT NOT NULL CHECK (account_type IN ('cash', 'checking', 'savings', 'money_market', 'certificate_of_deposit', 'credit_card', 'mortgage', 'auto_loan', 'student_loan', 'personal_loan', 'other_loan', 'taxable_brokerage', 'traditional_ira', 'roth_ira', 'traditional_sep_ira', 'roth_sep_ira', 'traditional_simple_ira', 'roth_simple_ira', 'traditional_401k', 'roth_401k', 'mixed_401k', 'traditional_403b', 'roth_403b', 'mixed_403b', 'traditional_457b', 'roth_457b', 'mixed_457b', 'pension', 'other_retirement', 'hsa', '529', 'other', 'unclassified')),
+        candidate_institution_ids_json TEXT NOT NULL,
+        match_evidence_json TEXT NOT NULL,
+        resolved_institution_id TEXT REFERENCES institutions(id) ON DELETE SET NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'resolved')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(provider_connection_id, remote_connection_id, remote_account_id)
       );
       CREATE TABLE IF NOT EXISTS account_balances (
         id TEXT PRIMARY KEY,
@@ -70,9 +113,27 @@ const migrations = [
         created_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS account_balances_account_as_of ON account_balances(account_id, as_of DESC);
+      CREATE TRIGGER IF NOT EXISTS accounts_external_institution_insert
+        BEFORE INSERT ON accounts
+        WHEN NEW.external_connection_id IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM external_institution_connections
+          WHERE id = NEW.external_connection_id AND institution_id = NEW.institution_id
+        )
+        BEGIN SELECT RAISE(ABORT, 'external connection belongs to another institution'); END;
+      CREATE TRIGGER IF NOT EXISTS accounts_external_institution_update
+        BEFORE UPDATE OF institution_id, external_connection_id ON accounts
+        WHEN NEW.external_connection_id IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM external_institution_connections
+          WHERE id = NEW.external_connection_id AND institution_id = NEW.institution_id
+        )
+        BEGIN SELECT RAISE(ABORT, 'external connection belongs to another institution'); END;
     `,
-    down: `DROP INDEX IF EXISTS account_balances_account_as_of; DROP TABLE IF EXISTS account_balances;
-      DROP TABLE IF EXISTS accounts; DROP TABLE IF EXISTS institution_connections;`,
+    down: `DROP TRIGGER IF EXISTS accounts_external_institution_update;
+      DROP TRIGGER IF EXISTS accounts_external_institution_insert;
+      DROP INDEX IF EXISTS account_balances_account_as_of; DROP TABLE IF EXISTS account_balances;
+      DROP TABLE IF EXISTS account_import_reviews; DROP TABLE IF EXISTS accounts;
+      DROP TABLE IF EXISTS external_institution_connections; DROP TABLE IF EXISTS provider_connections;
+      DROP INDEX IF EXISTS institutions_domain_unique; DROP TABLE IF EXISTS institutions;`,
   },
   {
     id: "0003_transactions_categories_and_csv_imports",
@@ -332,6 +393,21 @@ export function createDatabase(filename = ":memory:"): AppDatabase {
       sqlite.exec(
         "CREATE TABLE IF NOT EXISTS _migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL)",
       );
+      const legacyAccountsMigration = sqlite
+        .prepare(
+          "SELECT 1 FROM _migrations WHERE id = '0002_accounts_and_institution_connections'",
+        )
+        .get();
+      const institutionsTable = sqlite
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'institutions'",
+        )
+        .get();
+      if (legacyAccountsMigration && !institutionsTable) {
+        throw new Error(
+          "Legacy account schema detected. Back up any needed data, then delete almanac-fi.sqlite and restart to apply the required 016a database reset.",
+        );
+      }
       for (const migration of migrations) {
         const applied = sqlite
           .prepare("SELECT 1 FROM _migrations WHERE id = ?")

@@ -3,6 +3,17 @@ import { describe, expect, test } from "vitest";
 import { createDatabase, migrationIds } from "./index.js";
 import { createUnitOfWork, inUnitOfWork } from "./repositories.js";
 
+function createTestInstitution(
+  unitOfWork: ReturnType<typeof createUnitOfWork>,
+  name = "Example Bank",
+) {
+  return unitOfWork.institutions.create({
+    domain: `${name.toLocaleLowerCase().replaceAll(" ", "-")}.test`,
+    name,
+    websiteUrl: null,
+  });
+}
+
 describe("SQLite foundation", () => {
   test("migrates a fresh isolated database", () => {
     const database = createDatabase();
@@ -10,6 +21,17 @@ describe("SQLite foundation", () => {
     expect(
       database.sqlite.prepare("SELECT id FROM _migrations").all(),
     ).toHaveLength(migrationIds().length);
+    database.close();
+  });
+
+  test("requires an explicit reset for the legacy account schema", () => {
+    const database = createDatabase();
+    database.sqlite.exec(`
+      CREATE TABLE _migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL);
+      INSERT INTO _migrations VALUES ('0002_accounts_and_institution_connections', '2026-07-15T00:00:00.000Z');
+      CREATE TABLE institution_connections (id TEXT PRIMARY KEY);
+    `);
+    expect(() => database.migrate()).toThrow(/required 016a database reset/);
     database.close();
   });
 
@@ -70,22 +92,67 @@ describe("SQLite foundation", () => {
     const database = createDatabase();
     database.migrate();
     const unitOfWork = createUnitOfWork(database);
-    const connection = unitOfWork.institutionConnections.create({
-      externalId: "simplefin-1",
-      institutionName: "Example Credit Union",
-      institutionUrl: "https://example.test",
+    const institution = createTestInstitution(
+      unitOfWork,
+      "Example Credit Union",
+    );
+    const providerConnection = unitOfWork.providerConnections.create({
       provider: "simplefin",
+      providerNamespace: "https://bridge.simplefin.org",
       secretKey: "simplefin-example",
+      status: "connected",
+    });
+    const externalConnection = unitOfWork.externalInstitutionConnections.upsert(
+      {
+        institutionId: institution.id,
+        providerConnectionId: providerConnection.id,
+        remoteConnectionId: "connection-1",
+        remoteName: "Example Credit Union login",
+        remoteOrganizationId: "organization-1",
+        remoteOrganizationUrl: "https://example-credit-union.test",
+        status: "connected",
+      },
+    );
+    const secondInstitution = createTestInstitution(unitOfWork, "Second Bank");
+    const secondExternalConnection =
+      unitOfWork.externalInstitutionConnections.upsert({
+        institutionId: secondInstitution.id,
+        providerConnectionId: providerConnection.id,
+        remoteConnectionId: "connection-2",
+        remoteName: "Second Bank login",
+        remoteOrganizationId: "organization-2",
+        remoteOrganizationUrl: "https://second-bank.test",
+        status: "connected",
+      });
+    unitOfWork.externalInstitutionConnections.upsert({
+      institutionId: institution.id,
+      providerConnectionId: providerConnection.id,
+      remoteConnectionId: "connection-3",
+      remoteName: "Example Credit Union second login",
+      remoteOrganizationId: "organization-1",
+      remoteOrganizationUrl: "https://example-credit-union.test",
       status: "connected",
     });
     const account = unitOfWork.accounts.create({
       accountType: "checking",
-      connectionId: connection.id,
       currency: "USD",
+      externalConnectionId: externalConnection.id,
       externalId: "account-1",
+      institutionId: institution.id,
       name: "Household checking",
       status: "active",
     });
+    expect(() =>
+      unitOfWork.accounts.create({
+        accountType: "checking",
+        currency: "USD",
+        externalConnectionId: secondExternalConnection.id,
+        externalId: "invalid-account",
+        institutionId: institution.id,
+        name: "Invalid ownership",
+        status: "active",
+      }),
+    ).toThrow(/another institution/);
     const firstBalance = unitOfWork.accounts.addBalance({
       accountId: account.id,
       amountMinor: 100_00,
@@ -101,7 +168,8 @@ describe("SQLite foundation", () => {
 
     expect(unitOfWork.accounts.findById(account.id)).toMatchObject({
       id: account.id,
-      connectionId: connection.id,
+      externalConnectionId: externalConnection.id,
+      institutionId: institution.id,
       currency: "USD",
     });
     expect(unitOfWork.accounts.listBalances(account.id).items).toEqual(
@@ -113,10 +181,128 @@ describe("SQLite foundation", () => {
           "SELECT sql FROM sqlite_master WHERE name = 'institution_connections'",
         )
         .get(),
-    ).not.toMatchObject({ sql: expect.stringContaining("access_url") });
+    ).toBeUndefined();
 
-    unitOfWork.institutionConnections.delete(connection.id);
-    expect(unitOfWork.accounts.findById(account.id)?.connectionId).toBeNull();
+    unitOfWork.providerConnections.revoke(providerConnection.id);
+    expect(unitOfWork.accounts.findById(account.id)?.institutionId).toBe(
+      institution.id,
+    );
+    expect(
+      unitOfWork.providerConnections.findById(providerConnection.id),
+    ).toMatchObject({ secretKey: null, status: "disconnected" });
+    expect(unitOfWork.externalInstitutionConnections.list().items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          institutionId: institution.id,
+          status: "disconnected",
+        }),
+        expect.objectContaining({
+          institutionId: secondInstitution.id,
+          status: "disconnected",
+        }),
+      ]),
+    );
+    expect(unitOfWork.institutions.delete(secondInstitution.id)).toBe(
+      "deleted",
+    );
+    database.close();
+  });
+
+  test("reconciles provider accounts by scoped organization identity and domain", () => {
+    const database = createDatabase();
+    database.migrate();
+    const unitOfWork = createUnitOfWork(database);
+    const institution = unitOfWork.institutions.create({
+      domain: "pnc.com",
+      name: "PNC",
+      websiteUrl: "https://www.pnc.com",
+    });
+    const provider = unitOfWork.providerConnections.create({
+      provider: "simplefin",
+      providerNamespace: "https://bridge.simplefin.org",
+      secretKey: "simplefin-primary",
+      status: "connected",
+    });
+    const incoming = {
+      accountName: "Retirement plan",
+      currency: "USD",
+      providerConnectionId: provider.id,
+      remoteAccountId: "account-401k",
+      remoteConnectionId: "login-1",
+      remoteConnectionName: "PNC login",
+      remoteOrganizationId: "pnc-org",
+      remoteOrganizationUrl: "https://www.pnc.com",
+    } as const;
+
+    const first = unitOfWork.accountImportReviews.reconcile(incoming);
+    expect(first.accountId).not.toBeNull();
+    expect(first.review).toMatchObject({
+      accountType: "unclassified",
+      candidateInstitutionIds: [institution.id],
+      status: "pending",
+    });
+    const resolved = unitOfWork.accountImportReviews.resolve(
+      first.review?.id ?? "",
+      { accountType: "traditional_401k", institutionId: institution.id },
+    );
+    expect(resolved).toMatchObject({
+      accountType: "traditional_401k",
+      status: "resolved",
+    });
+    const account = unitOfWork.accounts.findById(first.accountId ?? "");
+    expect(account).toMatchObject({
+      accountType: "traditional_401k",
+      institutionId: institution.id,
+    });
+
+    const repeated = unitOfWork.accountImportReviews.reconcile(incoming);
+    expect(repeated.accountId).toBe(first.accountId);
+    expect(repeated.review).toBeNull();
+    expect(unitOfWork.externalInstitutionConnections.list().items).toHaveLength(
+      1,
+    );
+    expect(unitOfWork.institutions.delete(institution.id)).toBe("has_accounts");
+    database.close();
+  });
+
+  test("does not silently merge conflicting institution matches", () => {
+    const database = createDatabase();
+    database.migrate();
+    const unitOfWork = createUnitOfWork(database);
+    const first = createTestInstitution(unitOfWork, "First Bank");
+    const second = createTestInstitution(unitOfWork, "Second Bank");
+    const provider = unitOfWork.providerConnections.create({
+      provider: "simplefin",
+      providerNamespace: "https://bridge.simplefin.org",
+      secretKey: null,
+      status: "connected",
+    });
+    unitOfWork.externalInstitutionConnections.upsert({
+      institutionId: first.id,
+      providerConnectionId: provider.id,
+      remoteConnectionId: "first-login",
+      remoteName: "First login",
+      remoteOrganizationId: "shared-org-id",
+      remoteOrganizationUrl: "https://first-bank.test",
+      status: "connected",
+    });
+
+    const result = unitOfWork.accountImportReviews.reconcile({
+      accountName: "Ambiguous account",
+      accountType: "checking",
+      currency: "USD",
+      providerConnectionId: provider.id,
+      remoteAccountId: "ambiguous-account",
+      remoteConnectionId: "second-login",
+      remoteConnectionName: "Conflicting login",
+      remoteOrganizationId: "shared-org-id",
+      remoteOrganizationUrl: second.domain,
+    });
+
+    expect(result.accountId).toBeNull();
+    expect(result.review?.candidateInstitutionIds).toEqual(
+      expect.arrayContaining([first.id, second.id]),
+    );
     database.close();
   });
 
@@ -124,11 +310,13 @@ describe("SQLite foundation", () => {
     const database = createDatabase();
     database.migrate();
     const unitOfWork = createUnitOfWork(database);
+    const institution = createTestInstitution(unitOfWork);
     const account = unitOfWork.accounts.create({
       accountType: "checking",
-      connectionId: null,
       currency: "USD",
+      externalConnectionId: null,
       externalId: null,
+      institutionId: institution.id,
       name: "Transaction account",
       status: "active",
     });
@@ -188,11 +376,13 @@ describe("SQLite foundation", () => {
     const database = createDatabase();
     database.migrate();
     const unitOfWork = createUnitOfWork(database);
+    const institution = createTestInstitution(unitOfWork);
     const account = unitOfWork.accounts.create({
       accountType: "checking",
-      connectionId: null,
       currency: "USD",
+      externalConnectionId: null,
       externalId: null,
+      institutionId: institution.id,
       name: "Pagination account",
       status: "active",
     });
@@ -253,12 +443,14 @@ describe("SQLite foundation", () => {
     const database = createDatabase();
     database.migrate();
     const unitOfWork = createUnitOfWork(database);
+    const institution = createTestInstitution(unitOfWork);
     const accounts = ["Checking", "Savings"].map((name) =>
       unitOfWork.accounts.create({
         accountType: "checking",
-        connectionId: null,
         currency: "USD",
+        externalConnectionId: null,
         externalId: null,
+        institutionId: institution.id,
         name,
         status: "active",
       }),
@@ -324,11 +516,13 @@ describe("SQLite foundation", () => {
     const database = createDatabase();
     database.migrate();
     const unitOfWork = createUnitOfWork(database);
+    const institution = createTestInstitution(unitOfWork);
     const account = unitOfWork.accounts.create({
       accountType: "checking",
-      connectionId: null,
       currency: "USD",
+      externalConnectionId: null,
       externalId: null,
+      institutionId: institution.id,
       name: "Review",
       status: "active",
     });
@@ -404,11 +598,13 @@ describe("SQLite foundation", () => {
     const database = createDatabase();
     database.migrate();
     const unitOfWork = createUnitOfWork(database);
+    const institution = createTestInstitution(unitOfWork);
     const account = unitOfWork.accounts.create({
       accountType: "checking",
-      connectionId: null,
       currency: "USD",
+      externalConnectionId: null,
       externalId: null,
+      institutionId: institution.id,
       name: "Income",
       status: "active",
     });
@@ -569,11 +765,13 @@ describe("SQLite foundation", () => {
     const database = createDatabase();
     database.migrate();
     const unitOfWork = createUnitOfWork(database);
+    const institution = createTestInstitution(unitOfWork);
     const account = unitOfWork.accounts.create({
-      accountType: "investment",
-      connectionId: null,
+      accountType: "taxable_brokerage",
       currency: "USD",
+      externalConnectionId: null,
       externalId: null,
+      institutionId: institution.id,
       name: "Brokerage",
       status: "active",
     });

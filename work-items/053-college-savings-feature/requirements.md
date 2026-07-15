@@ -14,7 +14,7 @@ Dependent data and assumptions are explicit; all allocations use the shared ledg
 
 ## Dependencies
 
-012, 027, 028, 033, 034, 035, 036, 045, 046, 049
+012, 016a, 027, 028, 033, 034, 035, 036, 037, 038, 045, 046, 049
 
 ## Verification
 
@@ -22,4 +22,4 @@ Run dependent timeline, funding-gap, UI, MCP, and evaluation tests.
 
 ## Status
 
-Not started
+Deferred

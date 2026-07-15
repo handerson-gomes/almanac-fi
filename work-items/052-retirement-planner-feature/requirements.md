@@ -14,7 +14,7 @@ Projection inputs/results are versioned; return/inflation/withdrawal assumptions
 
 ## Dependencies
 
-012, 027, 028, 028a, 028b, 033, 034, 035, 036, 042a, 045, 046, 049
+012, 016a, 027, 028, 028a, 028b, 033, 034, 035, 036, 037, 038, 042a, 045, 046, 049
 
 ## Verification
 
@@ -22,4 +22,4 @@ Run deterministic scenario fixtures, proposal conflicts, UI, MCP contracts, and 
 
 ## Status
 
-Not started
+Deferred

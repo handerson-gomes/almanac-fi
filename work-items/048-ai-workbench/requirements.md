@@ -22,4 +22,4 @@ Run UI tests for metadata-only, redacted, and external-host states.
 
 ## Status
 
-Not started
+Deferred

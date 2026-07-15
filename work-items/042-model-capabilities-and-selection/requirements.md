@@ -22,4 +22,4 @@ Test precedence, fallback, and incompatible-model paths.
 
 ## Status
 
-Not started
+Deferred

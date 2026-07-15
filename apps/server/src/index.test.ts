@@ -42,30 +42,40 @@ test("errors are problem documents without stack traces", async () => {
   await rm(dataHome, { force: true, recursive: true });
 });
 
-test("supports account, balance, and institution connection CRUD", async () => {
+test("supports institution, account, balance, and provider connection CRUD", async () => {
   const dataHome = await mkdtemp(join(tmpdir(), "almanac-fi-server-"));
   const app = await createServer({
     config: { dataHome, host: "127.0.0.1", logLevel: "error", port: 0 },
   });
-  const connectionResponse = await app.inject({
+  const institutionResponse = await app.inject({
     method: "POST",
     payload: {
-      institutionName: "Example Bank",
+      name: "Example Bank",
+      websiteUrl: "https://example.test",
+    },
+    url: "/institutions",
+  });
+  expect(institutionResponse.statusCode).toBe(201);
+  const institution = institutionResponse.json();
+  expect(institution).toMatchObject({ domain: "example.test" });
+  const providerResponse = await app.inject({
+    method: "POST",
+    payload: {
       provider: "simplefin",
+      providerNamespace: "https://bridge.simplefin.org",
       secretKey: "simplefin-example",
     },
-    url: "/institution-connections",
+    url: "/provider-connections",
   });
-  expect(connectionResponse.statusCode).toBe(201);
-  const connection = connectionResponse.json();
-  expect(connection).toMatchObject({ secretKey: "simplefin-example" });
+  expect(providerResponse.statusCode).toBe(201);
+  const providerConnection = providerResponse.json();
 
   const created = await app.inject({
     method: "POST",
     payload: {
       accountType: "checking",
-      connectionId: connection.id,
       currency: "USD",
+      institutionId: institution.id,
       name: "Household checking",
     },
     url: "/accounts",
@@ -115,14 +125,78 @@ test("supports account, balance, and institution connection CRUD", async () => {
     (
       await app.inject({
         method: "POST",
-        payload: { accountType: "checking", currency: "usd", name: "Invalid" },
+        payload: {
+          accountType: "checking",
+          currency: "usd",
+          institutionId: institution.id,
+          name: "Invalid",
+        },
         url: "/accounts",
       })
     ).statusCode,
   ).toBe(400);
   expect(
+    (
+      await app.inject({
+        method: "POST",
+        payload: {
+          accountType: "checking",
+          currency: "USD",
+          name: "Missing institution",
+        },
+        url: "/accounts",
+      })
+    ).statusCode,
+  ).toBe(400);
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        payload: {
+          accountType: "checking",
+          currency: "USD",
+          institutionId: "99999999-9999-4999-8999-999999999999",
+          name: "Unknown institution",
+        },
+        url: "/accounts",
+      })
+    ).statusCode,
+  ).toBe(404);
+  expect(
+    (
+      await app.inject({
+        method: "DELETE",
+        url: `/institutions/${institution.id}`,
+      })
+    ).statusCode,
+  ).toBe(409);
+  expect(
+    (
+      await app.inject({
+        method: "DELETE",
+        url: `/provider-connections/${providerConnection.id}`,
+      })
+    ).statusCode,
+  ).toBe(204);
+  expect(
+    (
+      await app.inject({
+        method: "GET",
+        url: `/provider-connections/${providerConnection.id}`,
+      })
+    ).json(),
+  ).toMatchObject({ secretKey: null, status: "disconnected" });
+  expect(
     (await app.inject({ method: "DELETE", url: `/accounts/${account.id}` }))
       .statusCode,
+  ).toBe(204);
+  expect(
+    (
+      await app.inject({
+        method: "DELETE",
+        url: `/institutions/${institution.id}`,
+      })
+    ).statusCode,
   ).toBe(204);
 
   await app.close();
@@ -134,12 +208,20 @@ test("previews and imports CSV rows idempotently with category rules", async () 
   const app = await createServer({
     config: { dataHome, host: "127.0.0.1", logLevel: "error", port: 0 },
   });
+  const institution = (
+    await app.inject({
+      method: "POST",
+      payload: { name: "CSV Bank" },
+      url: "/institutions",
+    })
+  ).json();
   const account = (
     await app.inject({
       method: "POST",
       payload: {
         accountType: "checking",
         currency: "USD",
+        institutionId: institution.id,
         name: "Import account",
       },
       url: "/accounts",

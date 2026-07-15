@@ -22,4 +22,4 @@ Use an in-memory exporter to test span trees and redaction.
 
 ## Status
 
-Not started
+Deferred

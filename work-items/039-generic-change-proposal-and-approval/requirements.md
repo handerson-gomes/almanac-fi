@@ -14,7 +14,7 @@ Write capabilities can require an approved proposal; no approval token is reusab
 
 ## Dependencies
 
-006, 007, 008, 014
+006, 007, 008, 014, 037
 
 ## Verification
 
@@ -22,4 +22,4 @@ Test state transitions, authorization scopes, and atomic application.
 
 ## Status
 
-Not started
+Deferred

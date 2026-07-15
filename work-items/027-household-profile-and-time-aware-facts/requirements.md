@@ -27,3 +27,7 @@ Complete
 ## User experience impact
 
 Users can build a household profile, identify members and dependents, and record dated facts with their source, confidence, sensitivity, and verification state. They can view the facts that were true on a chosen date without losing prior values, while invalid or overlapping time periods are prevented.
+
+## Architectural boundary
+
+Household facts are contextual inputs for explanation and future extension workflows. They are not authoritative monetary records and must not contribute balances, income, obligations, budget targets, goal funding, or allocations to deterministic calculations. Context that becomes financially binding must be promoted to the corresponding typed domain entity.

@@ -13,11 +13,37 @@ export const currencySchema = z
 export const accountTypeSchema = z.enum([
   "cash",
   "checking",
-  "credit_card",
-  "investment",
-  "loan",
-  "other",
   "savings",
+  "money_market",
+  "certificate_of_deposit",
+  "credit_card",
+  "mortgage",
+  "auto_loan",
+  "student_loan",
+  "personal_loan",
+  "other_loan",
+  "taxable_brokerage",
+  "traditional_ira",
+  "roth_ira",
+  "traditional_sep_ira",
+  "roth_sep_ira",
+  "traditional_simple_ira",
+  "roth_simple_ira",
+  "traditional_401k",
+  "roth_401k",
+  "mixed_401k",
+  "traditional_403b",
+  "roth_403b",
+  "mixed_403b",
+  "traditional_457b",
+  "roth_457b",
+  "mixed_457b",
+  "pension",
+  "other_retirement",
+  "hsa",
+  "529",
+  "other",
+  "unclassified",
 ]);
 export const accountStatusSchema = z.enum(["active", "closed", "hidden"]);
 export const connectionStatusSchema = z.enum([
@@ -31,48 +57,73 @@ export const secretKeyReferenceSchema = z
   .regex(/^[a-z][a-z0-9-]{1,62}$/, "Secret keys use kebab-case");
 
 const nullableString = z.string().nullable();
-export const institutionConnectionSchema = z.object({
+export const institutionSchema = z.object({
   createdAt: z.iso.datetime(),
-  externalId: nullableString,
+  domain: nullableString,
   id: entityIdSchema,
-  institutionName: z.string().trim().min(1).max(200),
-  institutionUrl: z.url().nullable(),
+  name: z.string().trim().min(1).max(200),
+  websiteUrl: z.url().nullable(),
+  updatedAt: z.iso.datetime(),
+});
+export const createInstitutionSchema = institutionSchema
+  .pick({ domain: true, name: true, websiteUrl: true })
+  .partial({ domain: true, websiteUrl: true });
+export const updateInstitutionSchema = createInstitutionSchema
+  .partial()
+  .refine(
+    (value) => Object.keys(value).length > 0,
+    "Provide at least one field to update",
+  );
+
+export const providerConnectionSchema = z.object({
+  createdAt: z.iso.datetime(),
+  id: entityIdSchema,
   provider: z.string().trim().min(1).max(100),
+  providerNamespace: z.string().trim().min(1).max(500),
   secretKey: secretKeyReferenceSchema.nullable(),
   status: connectionStatusSchema,
   updatedAt: z.iso.datetime(),
 });
-export const createInstitutionConnectionSchema = institutionConnectionSchema
+export const createProviderConnectionSchema = providerConnectionSchema
   .pick({
-    externalId: true,
-    institutionName: true,
-    institutionUrl: true,
     provider: true,
+    providerNamespace: true,
     secretKey: true,
     status: true,
   })
   .partial({
-    externalId: true,
-    institutionUrl: true,
     secretKey: true,
     status: true,
   })
   .extend({ status: connectionStatusSchema.default("connected") });
-export const updateInstitutionConnectionSchema =
-  createInstitutionConnectionSchema
-    .partial()
-    .refine(
-      (value) => Object.keys(value).length > 0,
-      "Provide at least one field to update",
-    );
+export const updateProviderConnectionSchema = createProviderConnectionSchema
+  .partial()
+  .refine(
+    (value) => Object.keys(value).length > 0,
+    "Provide at least one field to update",
+  );
+
+export const externalInstitutionConnectionSchema = z.object({
+  createdAt: z.iso.datetime(),
+  id: entityIdSchema,
+  institutionId: entityIdSchema,
+  providerConnectionId: entityIdSchema,
+  remoteConnectionId: z.string().trim().min(1).max(500),
+  remoteName: z.string().trim().min(1).max(500),
+  remoteOrganizationId: nullableString,
+  remoteOrganizationUrl: z.url().nullable(),
+  status: connectionStatusSchema,
+  updatedAt: z.iso.datetime(),
+});
 
 export const accountSchema = z.object({
   accountType: accountTypeSchema,
-  connectionId: entityIdSchema.nullable(),
   createdAt: z.iso.datetime(),
   currency: currencySchema,
+  externalConnectionId: entityIdSchema.nullable(),
   externalId: nullableString,
   id: entityIdSchema,
+  institutionId: entityIdSchema,
   name: z.string().trim().min(1).max(200),
   status: accountStatusSchema,
   updatedAt: z.iso.datetime(),
@@ -80,13 +131,14 @@ export const accountSchema = z.object({
 export const createAccountSchema = accountSchema
   .pick({
     accountType: true,
-    connectionId: true,
     currency: true,
+    externalConnectionId: true,
     externalId: true,
+    institutionId: true,
     name: true,
     status: true,
   })
-  .partial({ connectionId: true, externalId: true, status: true })
+  .partial({ externalConnectionId: true, externalId: true, status: true })
   .extend({ status: accountStatusSchema.default("active") });
 export const updateAccountSchema = createAccountSchema
   .partial()
@@ -112,8 +164,16 @@ export const accountListSchema = z.object({
   items: z.array(accountSchema),
   nextCursor: entityIdSchema.optional(),
 });
-export const institutionConnectionListSchema = z.object({
-  items: z.array(institutionConnectionSchema),
+export const institutionListSchema = z.object({
+  items: z.array(institutionSchema),
+  nextCursor: entityIdSchema.optional(),
+});
+export const providerConnectionListSchema = z.object({
+  items: z.array(providerConnectionSchema),
+  nextCursor: entityIdSchema.optional(),
+});
+export const externalInstitutionConnectionListSchema = z.object({
+  items: z.array(externalInstitutionConnectionSchema),
   nextCursor: entityIdSchema.optional(),
 });
 export const accountBalanceListSchema = z.object({
@@ -122,6 +182,47 @@ export const accountBalanceListSchema = z.object({
 });
 export type Account = z.infer<typeof accountSchema>;
 export type CreateAccount = z.input<typeof createAccountSchema>;
+export type Institution = z.infer<typeof institutionSchema>;
+export type CreateInstitution = z.input<typeof createInstitutionSchema>;
+export type ProviderConnection = z.infer<typeof providerConnectionSchema>;
+export type ExternalInstitutionConnection = z.infer<
+  typeof externalInstitutionConnectionSchema
+>;
+
+export const institutionMatchEvidenceSchema = z.object({
+  institutionId: entityIdSchema,
+  strategy: z.enum(["domain", "organization_id"]),
+  value: z.string(),
+});
+export const accountImportReviewSchema = z.object({
+  accountName: z.string().trim().min(1).max(200),
+  accountType: accountTypeSchema,
+  candidateInstitutionIds: z.array(entityIdSchema),
+  createdAt: z.iso.datetime(),
+  currency: currencySchema,
+  id: entityIdSchema,
+  matchEvidence: z.array(institutionMatchEvidenceSchema),
+  providerConnectionId: entityIdSchema,
+  remoteAccountId: z.string().trim().min(1).max(500),
+  remoteConnectionId: z.string().trim().min(1).max(500),
+  remoteConnectionName: z.string().trim().min(1).max(500),
+  remoteOrganizationId: nullableString,
+  remoteOrganizationUrl: z.url().nullable(),
+  resolvedInstitutionId: entityIdSchema.nullable(),
+  status: z.enum(["pending", "resolved"]),
+  updatedAt: z.iso.datetime(),
+});
+export const accountImportReviewListSchema = z.object({
+  items: z.array(accountImportReviewSchema),
+  nextCursor: entityIdSchema.optional(),
+});
+export const resolveAccountImportReviewSchema = z
+  .object({ institutionId: entityIdSchema, accountType: accountTypeSchema })
+  .refine(
+    (value) => value.accountType !== "unclassified",
+    "Select a specific account type",
+  );
+export type AccountImportReview = z.infer<typeof accountImportReviewSchema>;
 
 export const categoryStatusSchema = z.enum(["active", "archived"]);
 export const categorySchema = z.object({
@@ -967,14 +1068,75 @@ export const openApiDocument = Object.freeze({
         responses: { "201": { description: "Balance recorded" } },
       },
     },
-    "/institution-connections": {
+    "/institutions": {
       get: {
-        operationId: "listInstitutionConnections",
-        responses: { "200": { description: "Institution connections" } },
+        operationId: "listInstitutions",
+        responses: { "200": { description: "Institutions" } },
       },
       post: {
-        operationId: "createInstitutionConnection",
-        responses: { "201": { description: "Connection created" } },
+        operationId: "createInstitution",
+        responses: { "201": { description: "Institution created" } },
+      },
+    },
+    "/institutions/{id}": {
+      delete: {
+        operationId: "deleteInstitution",
+        responses: {
+          "204": { description: "Institution deleted" },
+          "409": { description: "Institution still owns accounts" },
+        },
+      },
+      get: {
+        operationId: "getInstitution",
+        responses: { "200": { description: "Institution" } },
+      },
+      patch: {
+        operationId: "updateInstitution",
+        responses: { "200": { description: "Institution updated" } },
+      },
+    },
+    "/provider-connections": {
+      get: {
+        operationId: "listProviderConnections",
+        responses: { "200": { description: "Provider connections" } },
+      },
+      post: {
+        operationId: "createProviderConnection",
+        responses: { "201": { description: "Provider connection created" } },
+      },
+    },
+    "/provider-connections/{id}": {
+      delete: {
+        operationId: "revokeProviderConnection",
+        responses: { "204": { description: "Credentials revoked" } },
+      },
+      get: {
+        operationId: "getProviderConnection",
+        responses: { "200": { description: "Provider connection" } },
+      },
+      patch: {
+        operationId: "updateProviderConnection",
+        responses: { "200": { description: "Provider connection updated" } },
+      },
+    },
+    "/external-institution-connections": {
+      get: {
+        operationId: "listExternalInstitutionConnections",
+        responses: {
+          "200": { description: "External institution connections" },
+        },
+      },
+    },
+    "/account-import-reviews": {
+      get: {
+        operationId: "listAccountImportReviews",
+        responses: { "200": { description: "Pending import reviews" } },
+      },
+    },
+    "/account-import-reviews/{id}/resolve": {
+      post: {
+        operationId: "resolveAccountImportReview",
+        responses: { "200": { description: "Import review resolved" } },
       },
     },
     "/health": {

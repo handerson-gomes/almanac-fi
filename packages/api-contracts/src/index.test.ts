@@ -29,10 +29,12 @@ test("requires a request id in errors", () => {
 });
 
 test("validates account type and ISO currency at the boundary", () => {
+  const institutionId = "11111111-1111-4111-8111-111111111111";
   expect(
     createAccountSchema.parse({
       accountType: "checking",
       currency: "USD",
+      institutionId,
       name: "Checking",
     }),
   ).toMatchObject({ status: "active" });
@@ -40,9 +42,33 @@ test("validates account type and ISO currency at the boundary", () => {
     createAccountSchema.parse({
       accountType: "brokerage",
       currency: "usd",
+      institutionId,
       name: "Checking",
     }),
   ).toThrow();
+  for (const accountType of [
+    "traditional_ira",
+    "roth_ira",
+    "traditional_401k",
+    "roth_401k",
+    "mixed_401k",
+    "traditional_403b",
+    "roth_403b",
+    "mixed_403b",
+    "traditional_457b",
+    "roth_457b",
+    "mixed_457b",
+    "other_retirement",
+  ] as const) {
+    expect(
+      createAccountSchema.parse({
+        accountType,
+        currency: "USD",
+        institutionId,
+        name: accountType,
+      }),
+    ).toMatchObject({ accountType });
+  }
 });
 
 test("accepts extended bank transaction descriptions", () => {

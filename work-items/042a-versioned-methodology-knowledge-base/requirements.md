@@ -22,4 +22,4 @@ Run loader/validator tests for version selection, jurisdiction filtering, stale 
 
 ## Status
 
-Not started
+Deferred

@@ -28,8 +28,11 @@ import {
   createPerson,
   createCsvMapping,
   createAccount,
+  createInstitution,
+  deleteInstitution,
   getCsvMappings,
   getAccounts,
+  getAccountImportReviews,
   getBudgetAnalysis,
   getBudgetDrilldown,
   getBudgetPeriods,
@@ -37,6 +40,9 @@ import {
   getCategories,
   getCategorizationRules,
   getHealth,
+  getInstitutions,
+  getExternalInstitutionConnections,
+  getProviderConnections,
   getHouseholdFacts,
   getHouseholds,
   getFinancialGoals,
@@ -45,7 +51,12 @@ import {
   getTransaction,
   getTransactions,
   previewCsvImport,
+  resolveAccountImportReview,
+  revokeProviderConnection,
   updateCsvMapping,
+  updateInstitution,
+  type Account,
+  type AccountImportReview,
   type CreateAccount,
   type CsvMapping,
   type TransactionPage,
@@ -61,13 +72,16 @@ function Layout(): React.JSX.Element {
         <h1>Almanac FI</h1>
         <nav aria-label="Primary navigation" className="primary-nav">
           <Link to="/">Overview</Link>
+          <Link to="/institutions">Institutions</Link>
           <Link to="/accounts">Accounts</Link>
+          <Link to="/connections">Connections</Link>
           <Link to="/transactions">Transactions</Link>
           <Link to="/categories">Categories</Link>
           <Link to="/profile">Household</Link>
           <Link to="/planning">Planning</Link>
           <Link to="/budgets">Budgets</Link>
           <Link to="/import">Import CSV</Link>
+          <Link to="/import-review">Import review</Link>
         </nav>
       </header>
       <main className="app-content" id="main-content">
@@ -795,14 +809,125 @@ function Categories(): React.JSX.Element {
   );
 }
 
+const accountTypeGroups: readonly Readonly<{
+  label: string;
+  options: readonly Readonly<{
+    label: string;
+    value: Account["accountType"];
+  }>[];
+}>[] = [
+  {
+    label: "Depository",
+    options: [
+      { label: "Cash", value: "cash" },
+      { label: "Checking", value: "checking" },
+      { label: "Savings", value: "savings" },
+      { label: "Money market", value: "money_market" },
+      { label: "Certificate of deposit", value: "certificate_of_deposit" },
+    ],
+  },
+  {
+    label: "Credit and debt",
+    options: [
+      { label: "Credit card", value: "credit_card" },
+      { label: "Mortgage", value: "mortgage" },
+      { label: "Auto loan", value: "auto_loan" },
+      { label: "Student loan", value: "student_loan" },
+      { label: "Personal loan", value: "personal_loan" },
+      { label: "Other loan", value: "other_loan" },
+    ],
+  },
+  {
+    label: "Investing and retirement",
+    options: [
+      { label: "Taxable brokerage", value: "taxable_brokerage" },
+      { label: "Traditional IRA", value: "traditional_ira" },
+      { label: "Roth IRA", value: "roth_ira" },
+      { label: "Traditional SEP IRA", value: "traditional_sep_ira" },
+      { label: "Roth SEP IRA", value: "roth_sep_ira" },
+      { label: "Traditional SIMPLE IRA", value: "traditional_simple_ira" },
+      { label: "Roth SIMPLE IRA", value: "roth_simple_ira" },
+      { label: "Traditional 401(k)", value: "traditional_401k" },
+      { label: "Roth 401(k)", value: "roth_401k" },
+      { label: "Mixed 401(k) — needs breakdown", value: "mixed_401k" },
+      { label: "Traditional 403(b)", value: "traditional_403b" },
+      { label: "Roth 403(b)", value: "roth_403b" },
+      { label: "Mixed 403(b) — needs breakdown", value: "mixed_403b" },
+      { label: "Traditional 457(b)", value: "traditional_457b" },
+      { label: "Roth 457(b)", value: "roth_457b" },
+      { label: "Mixed 457(b) — needs breakdown", value: "mixed_457b" },
+      { label: "Pension", value: "pension" },
+      { label: "Other retirement", value: "other_retirement" },
+    ],
+  },
+  {
+    label: "Other",
+    options: [
+      { label: "Health savings account", value: "hsa" },
+      { label: "529 education plan", value: "529" },
+      { label: "Other", value: "other" },
+      { label: "Unclassified — review required", value: "unclassified" },
+    ],
+  },
+];
+
+function AccountTypeSelect(
+  props: Readonly<{
+    id: string;
+    includeUnclassified?: boolean;
+    onChange: (value: Account["accountType"]) => void;
+    value: Account["accountType"];
+  }>,
+): React.JSX.Element {
+  return (
+    <select
+      id={props.id}
+      onChange={(event) =>
+        props.onChange(event.target.value as Account["accountType"])
+      }
+      value={props.value}
+    >
+      {accountTypeGroups.map((group) => (
+        <optgroup key={group.label} label={group.label}>
+          {group.options
+            .filter(
+              (option) =>
+                props.includeUnclassified === true ||
+                option.value !== "unclassified",
+            )
+            .map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+        </optgroup>
+      ))}
+    </select>
+  );
+}
+
 function Accounts(): React.JSX.Element {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<CreateAccount>({
     accountType: "checking",
     currency: "USD",
+    institutionId: "",
     name: "",
   });
+  const [newInstitutionName, setNewInstitutionName] = useState("");
   const accounts = useQuery({ queryFn: getAccounts, queryKey: ["accounts"] });
+  const institutions = useQuery({
+    queryFn: getInstitutions,
+    queryKey: ["institutions"],
+  });
+  const addInstitution = useMutation({
+    mutationFn: () => createInstitution({ name: newInstitutionName }),
+    onSuccess: async (institution) => {
+      setForm((current) => ({ ...current, institutionId: institution.id }));
+      setNewInstitutionName("");
+      await queryClient.invalidateQueries({ queryKey: ["institutions"] });
+    },
+  });
   const create = useMutation({
     mutationFn: createAccount,
     onSuccess: async () => {
@@ -813,6 +938,27 @@ function Accounts(): React.JSX.Element {
   return (
     <section aria-labelledby="accounts-heading" className="page">
       <h2 id="accounts-heading">Accounts</h2>
+      <section aria-labelledby="quick-institution-heading">
+        <h3 id="quick-institution-heading">Add an institution</h3>
+        <form
+          className="stacked-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            addInstitution.mutate();
+          }}
+        >
+          <label htmlFor="quick-institution-name">Institution name</label>
+          <input
+            id="quick-institution-name"
+            onChange={(event) => setNewInstitutionName(event.target.value)}
+            required
+            value={newInstitutionName}
+          />
+          <button disabled={addInstitution.isPending} type="submit">
+            Add institution
+          </button>
+        </form>
+      </section>
       <form
         className="stacked-form"
         onSubmit={(event) => {
@@ -827,25 +973,33 @@ function Accounts(): React.JSX.Element {
           required
           value={form.name}
         />
-        <label htmlFor="account-type">Account type</label>
+        <label htmlFor="account-institution">Institution</label>
         <select
-          id="account-type"
+          id="account-institution"
           onChange={(event) =>
+            setForm({ ...form, institutionId: event.target.value })
+          }
+          required
+          value={form.institutionId}
+        >
+          <option value="">Select an institution</option>
+          {institutions.data?.map((institution) => (
+            <option key={institution.id} value={institution.id}>
+              {institution.name}
+            </option>
+          ))}
+        </select>
+        <label htmlFor="account-type">Account type</label>
+        <AccountTypeSelect
+          id="account-type"
+          onChange={(accountType) =>
             setForm({
               ...form,
-              accountType: event.target.value as CreateAccount["accountType"],
+              accountType,
             })
           }
           value={form.accountType}
-        >
-          <option value="checking">Checking</option>
-          <option value="savings">Savings</option>
-          <option value="cash">Cash</option>
-          <option value="credit_card">Credit card</option>
-          <option value="loan">Loan</option>
-          <option value="investment">Investment</option>
-          <option value="other">Other</option>
-        </select>
+        />
         <label htmlFor="account-currency">Currency</label>
         <input
           id="account-currency"
@@ -869,8 +1023,278 @@ function Accounts(): React.JSX.Element {
         {accounts.data?.map((account) => (
           <li key={account.id}>
             {account.name} — {account.accountType.replaceAll("_", " ")} (
-            {account.currency})
+            {account.currency}) ·{" "}
+            {institutions.data?.find(
+              (institution) => institution.id === account.institutionId,
+            )?.name ?? "Unknown institution"}
           </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function InstitutionEditor(
+  props: Readonly<{
+    institution: Awaited<ReturnType<typeof getInstitutions>>[number];
+  }>,
+): React.JSX.Element {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState(props.institution.name);
+  const [websiteUrl, setWebsiteUrl] = useState(
+    props.institution.websiteUrl ?? "",
+  );
+  const update = useMutation({
+    mutationFn: () =>
+      updateInstitution(props.institution.id, {
+        name,
+        websiteUrl: websiteUrl || null,
+      }),
+    onSuccess: async () =>
+      queryClient.invalidateQueries({ queryKey: ["institutions"] }),
+  });
+  const remove = useMutation({
+    mutationFn: () => deleteInstitution(props.institution.id),
+    onSuccess: async () =>
+      queryClient.invalidateQueries({ queryKey: ["institutions"] }),
+  });
+  return (
+    <li>
+      <label htmlFor={`institution-${props.institution.id}`}>Name</label>{" "}
+      <input
+        id={`institution-${props.institution.id}`}
+        onChange={(event) => setName(event.target.value)}
+        value={name}
+      />{" "}
+      <label htmlFor={`institution-website-${props.institution.id}`}>
+        Website
+      </label>{" "}
+      <input
+        id={`institution-website-${props.institution.id}`}
+        onChange={(event) => setWebsiteUrl(event.target.value)}
+        type="url"
+        value={websiteUrl}
+      />{" "}
+      <button onClick={() => update.mutate()} type="button">
+        Save
+      </button>{" "}
+      <button onClick={() => remove.mutate()} type="button">
+        Delete
+      </button>
+      {props.institution.domain ? ` · ${props.institution.domain}` : null}
+      {remove.isError ? <p role="alert">{remove.error.message}</p> : null}
+    </li>
+  );
+}
+
+function Institutions(): React.JSX.Element {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState("");
+  const [websiteUrl, setWebsiteUrl] = useState("");
+  const institutions = useQuery({
+    queryFn: getInstitutions,
+    queryKey: ["institutions"],
+  });
+  const create = useMutation({
+    mutationFn: () =>
+      createInstitution({ name, websiteUrl: websiteUrl || undefined }),
+    onSuccess: async () => {
+      setName("");
+      setWebsiteUrl("");
+      await queryClient.invalidateQueries({ queryKey: ["institutions"] });
+    },
+  });
+  return (
+    <section aria-labelledby="institutions-heading" className="page">
+      <h2 id="institutions-heading">Institutions</h2>
+      <form
+        className="stacked-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          create.mutate();
+        }}
+      >
+        <label htmlFor="institution-name">Institution name</label>
+        <input
+          id="institution-name"
+          onChange={(event) => setName(event.target.value)}
+          required
+          value={name}
+        />
+        <label htmlFor="institution-website">Website (optional)</label>
+        <input
+          id="institution-website"
+          onChange={(event) => setWebsiteUrl(event.target.value)}
+          type="url"
+          value={websiteUrl}
+        />
+        <button type="submit">Add institution</button>
+      </form>
+      {institutions.data?.length === 0 ? <p>No institutions yet.</p> : null}
+      <ul aria-label="Institutions" className="data-list">
+        {institutions.data?.map((institution) => (
+          <InstitutionEditor institution={institution} key={institution.id} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function Connections(): React.JSX.Element {
+  const queryClient = useQueryClient();
+  const providers = useQuery({
+    queryFn: getProviderConnections,
+    queryKey: ["provider-connections"],
+  });
+  const external = useQuery({
+    queryFn: getExternalInstitutionConnections,
+    queryKey: ["external-institution-connections"],
+  });
+  const institutions = useQuery({
+    queryFn: getInstitutions,
+    queryKey: ["institutions"],
+  });
+  const revoke = useMutation({
+    mutationFn: revokeProviderConnection,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["provider-connections"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["external-institution-connections"],
+        }),
+      ]);
+    },
+  });
+  return (
+    <section aria-labelledby="connections-heading" className="page">
+      <h2 id="connections-heading">Connections</h2>
+      <p>
+        Revoking credentials stops future sync. Institutions, accounts, and
+        financial history remain stored locally.
+      </p>
+      {providers.data?.length === 0 ? (
+        <p>No provider connections yet.</p>
+      ) : null}
+      <ul aria-label="Provider connections" className="data-list">
+        {providers.data?.map((provider) => (
+          <li key={provider.id}>
+            {provider.provider} — {provider.status}
+            <ul>
+              {external.data
+                ?.filter(
+                  (connection) =>
+                    connection.providerConnectionId === provider.id,
+                )
+                .map((connection) => (
+                  <li key={connection.id}>
+                    {institutions.data?.find(
+                      (institution) =>
+                        institution.id === connection.institutionId,
+                    )?.name ?? "Unknown institution"}{" "}
+                    — {connection.remoteName} — {connection.status}
+                  </li>
+                ))}
+            </ul>
+            <button
+              disabled={provider.status === "disconnected"}
+              onClick={() => revoke.mutate(provider.id)}
+              type="button"
+            >
+              Revoke credentials
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ImportReviewItem(
+  props: Readonly<{
+    institutions: Awaited<ReturnType<typeof getInstitutions>>;
+    review: AccountImportReview;
+  }>,
+): React.JSX.Element {
+  const queryClient = useQueryClient();
+  const [institutionId, setInstitutionId] = useState(
+    props.review.candidateInstitutionIds[0] ?? "",
+  );
+  const [accountType, setAccountType] = useState<Account["accountType"]>(
+    props.review.accountType,
+  );
+  const resolve = useMutation({
+    mutationFn: () =>
+      resolveAccountImportReview(props.review.id, {
+        accountType,
+        institutionId,
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["account-import-reviews"] }),
+        queryClient.invalidateQueries({ queryKey: ["accounts"] }),
+      ]);
+    },
+  });
+  return (
+    <li>
+      <h3>{props.review.accountName}</h3>
+      <p>
+        {props.review.remoteConnectionName} · {props.review.currency}
+      </p>
+      <label htmlFor={`review-institution-${props.review.id}`}>
+        Institution
+      </label>
+      <select
+        id={`review-institution-${props.review.id}`}
+        onChange={(event) => setInstitutionId(event.target.value)}
+        required
+        value={institutionId}
+      >
+        <option value="">Select an institution</option>
+        {props.institutions.map((institution) => (
+          <option key={institution.id} value={institution.id}>
+            {institution.name}
+          </option>
+        ))}
+      </select>
+      <label htmlFor={`review-type-${props.review.id}`}>Account type</label>
+      <AccountTypeSelect
+        id={`review-type-${props.review.id}`}
+        includeUnclassified
+        onChange={setAccountType}
+        value={accountType}
+      />
+      <button
+        disabled={!institutionId || accountType === "unclassified"}
+        onClick={() => resolve.mutate()}
+        type="button"
+      >
+        Complete review
+      </button>
+    </li>
+  );
+}
+
+function ImportReviews(): React.JSX.Element {
+  const reviews = useQuery({
+    queryFn: getAccountImportReviews,
+    queryKey: ["account-import-reviews"],
+  });
+  const institutions = useQuery({
+    queryFn: getInstitutions,
+    queryKey: ["institutions"],
+  });
+  return (
+    <section aria-labelledby="import-review-heading" className="page">
+      <h2 id="import-review-heading">Import review</h2>
+      {reviews.data?.length === 0 ? <p>No imports need review.</p> : null}
+      <ul aria-label="Accounts requiring import review" className="data-list">
+        {reviews.data?.map((review) => (
+          <ImportReviewItem
+            institutions={institutions.data ?? []}
+            key={review.id}
+            review={review}
+          />
         ))}
       </ul>
     </section>
@@ -1368,6 +1792,21 @@ const accountsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/accounts",
 });
+const institutionsRoute = createRoute({
+  component: Institutions,
+  getParentRoute: () => rootRoute,
+  path: "/institutions",
+});
+const connectionsRoute = createRoute({
+  component: Connections,
+  getParentRoute: () => rootRoute,
+  path: "/connections",
+});
+const importReviewRoute = createRoute({
+  component: ImportReviews,
+  getParentRoute: () => rootRoute,
+  path: "/import-review",
+});
 const transactionsRoute = createRoute({
   component: Transactions,
   getParentRoute: () => rootRoute,
@@ -1402,10 +1841,13 @@ export const appRouter = createRouter({
   defaultNotFoundComponent: NotFound,
   routeTree: rootRoute.addChildren([
     overviewRoute,
+    institutionsRoute,
     accountsRoute,
+    connectionsRoute,
     transactionsRoute,
     categoriesRoute,
     csvImportRoute,
+    importReviewRoute,
     profileRoute,
     planningRoute,
     budgetsRoute,

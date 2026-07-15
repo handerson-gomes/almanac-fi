@@ -22,4 +22,4 @@ Run cross-adapter contract tests with a sample capability.
 
 ## Status
 
-Not started
+Deferred

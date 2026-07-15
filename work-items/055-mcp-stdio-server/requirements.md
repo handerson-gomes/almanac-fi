@@ -22,4 +22,4 @@ Run MCP inspector/protocol smoke tests.
 
 ## Status
 
-Not started
+Deferred

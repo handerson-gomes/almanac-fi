@@ -280,7 +280,11 @@ export function classifyIncome(
       recurringGroup,
     };
   }
-  if (input.accountType === "investment") {
+  if (
+    /(?:brokerage|_ira|_401k|_403b|_457b|pension|other_retirement|hsa|529)$/u.test(
+      input.accountType,
+    )
+  ) {
     return {
       confidence: 0.8,
       kind: "not_income",

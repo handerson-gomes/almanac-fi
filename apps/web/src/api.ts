@@ -1,5 +1,7 @@
 import {
   accountListSchema,
+  accountImportReviewListSchema,
+  accountImportReviewSchema,
   accountSchema,
   budgetCalculationSchema,
   budgetListSchema,
@@ -10,11 +12,14 @@ import {
   categorySchema,
   createCategorizationRuleSchema,
   createCategorySchema,
+  externalInstitutionConnectionListSchema,
   csvImportResultSchema,
   csvMappingListSchema,
   csvMappingRecordSchema,
   csvPreviewSchema,
   healthResponseSchema,
+  institutionListSchema,
+  institutionSchema,
   householdFactListSchema,
   householdFactSchema,
   householdListSchema,
@@ -31,17 +36,23 @@ import {
   type HouseholdFact,
   type Person,
   type Account,
+  type AccountImportReview,
   type Budget,
   type BudgetCalculation,
   type BudgetPeriod,
   type CategorizationRule,
   type Category,
   type CreateAccount,
+  type CreateInstitution,
   type CsvImportResult,
   type CsvMapping,
   type CsvMappingRecord,
   type CsvPreview,
   type CsvPreviewRequest,
+  type ExternalInstitutionConnection,
+  type Institution,
+  type ProviderConnection,
+  providerConnectionListSchema,
   transactionListSchema,
   transactionDetailsSchema,
   type Transaction,
@@ -50,17 +61,22 @@ import {
 
 export type {
   Account,
+  AccountImportReview,
   Budget,
   BudgetCalculation,
   BudgetPeriod,
   CategorizationRule,
   Category,
   CreateAccount,
+  CreateInstitution,
   CsvImportResult,
   CsvMapping,
   CsvMappingRecord,
   CsvPreview,
   CsvPreviewRequest,
+  ExternalInstitutionConnection,
+  Institution,
+  ProviderConnection,
   Transaction,
   TransactionDetails,
   Household,
@@ -102,6 +118,90 @@ export async function getAccounts(): Promise<readonly Account[]> {
 export async function createAccount(input: CreateAccount): Promise<Account> {
   return accountSchema.parse(
     await requestJson("/api/accounts", {
+      body: JSON.stringify(input),
+      method: "POST",
+    }),
+  );
+}
+
+export async function getInstitutions(): Promise<readonly Institution[]> {
+  return institutionListSchema.parse(await requestJson("/api/institutions"))
+    .items;
+}
+
+export async function createInstitution(
+  input: CreateInstitution,
+): Promise<Institution> {
+  return institutionSchema.parse(
+    await requestJson("/api/institutions", {
+      body: JSON.stringify(input),
+      method: "POST",
+    }),
+  );
+}
+
+export async function deleteInstitution(id: string): Promise<void> {
+  const response = await fetch(`/api/institutions/${id}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    const body = (await response.json()) as { detail?: string };
+    throw new Error(body.detail ?? "The institution could not be deleted.");
+  }
+}
+
+export async function updateInstitution(
+  id: string,
+  input: Partial<CreateInstitution>,
+): Promise<Institution> {
+  return institutionSchema.parse(
+    await requestJson(`/api/institutions/${id}`, {
+      body: JSON.stringify(input),
+      method: "PATCH",
+    }),
+  );
+}
+
+export async function getProviderConnections(): Promise<
+  readonly ProviderConnection[]
+> {
+  return providerConnectionListSchema.parse(
+    await requestJson("/api/provider-connections"),
+  ).items;
+}
+
+export async function getExternalInstitutionConnections(): Promise<
+  readonly ExternalInstitutionConnection[]
+> {
+  return externalInstitutionConnectionListSchema.parse(
+    await requestJson("/api/external-institution-connections"),
+  ).items;
+}
+
+export async function revokeProviderConnection(id: string): Promise<void> {
+  const response = await fetch(`/api/provider-connections/${id}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) throw new Error("The connection could not be revoked.");
+}
+
+export async function getAccountImportReviews(): Promise<
+  readonly AccountImportReview[]
+> {
+  return accountImportReviewListSchema.parse(
+    await requestJson("/api/account-import-reviews"),
+  ).items;
+}
+
+export async function resolveAccountImportReview(
+  id: string,
+  input: Readonly<{
+    accountType: Account["accountType"];
+    institutionId: string;
+  }>,
+): Promise<AccountImportReview> {
+  return accountImportReviewSchema.parse(
+    await requestJson(`/api/account-import-reviews/${id}/resolve`, {
       body: JSON.stringify(input),
       method: "POST",
     }),

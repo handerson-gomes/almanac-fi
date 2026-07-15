@@ -53,7 +53,38 @@ test("renders the accounts screen and its account creation form", async () => {
     await screen.findByRole("heading", { name: "Accounts" }),
   ).toBeInTheDocument();
   expect(screen.getByLabelText("Account name")).toBeRequired();
+  expect(screen.getByLabelText("Institution")).toBeRequired();
   expect(await screen.findByText("No accounts yet.")).toBeInTheDocument();
+});
+
+test("renders institution management and provider-neutral import review", async () => {
+  vi.stubGlobal("scrollTo", vi.fn());
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [] }), { status: 200 }),
+      ),
+  );
+  await appRouter.navigate({ to: "/institutions" });
+  await appRouter.load();
+  const view = render(<App />);
+  expect(
+    await screen.findByRole("heading", { name: "Institutions" }),
+  ).toBeInTheDocument();
+  expect(screen.getByLabelText("Institution name")).toBeRequired();
+
+  view.unmount();
+  await appRouter.navigate({ to: "/import-review" });
+  await appRouter.load();
+  render(<App />);
+  expect(
+    await screen.findByRole("heading", { name: "Import review" }),
+  ).toBeInTheDocument();
+  expect(
+    await screen.findByText("No imports need review."),
+  ).toBeInTheDocument();
 });
 
 test("renders the household profile creation state", async () => {
@@ -287,11 +318,12 @@ test("renders transactions in aligned account and category columns", async () =>
               items: [
                 {
                   accountType: "checking",
-                  connectionId: null,
                   createdAt,
                   currency: "USD",
+                  externalConnectionId: null,
                   externalId: null,
                   id: accountId,
+                  institutionId: "55555555-5555-4555-8555-555555555555",
                   name: "Everyday checking",
                   status: "active",
                   updatedAt: createdAt,

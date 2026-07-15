@@ -14,7 +14,7 @@ AI execution has no unrestricted repository access; sensitive fields honor polic
 
 ## Dependencies
 
-014, 027, 028, 032, 040, 042a
+014, 027, 028, 032, 036, 040, 042a
 
 ## Verification
 
@@ -22,4 +22,4 @@ Test context inclusion/exclusion for each purpose and privacy policy.
 
 ## Status
 
-Not started
+Deferred

@@ -22,4 +22,4 @@ Run MCP end-to-end workflow and rejected/approved write tests.
 
 ## Status
 
-Not started
+Deferred

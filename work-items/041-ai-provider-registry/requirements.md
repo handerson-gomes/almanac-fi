@@ -22,4 +22,4 @@ Test provider registration, capability normalization, and missing-config states.
 
 ## Status
 
-Not started
+Deferred

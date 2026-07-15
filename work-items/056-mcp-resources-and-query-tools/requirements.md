@@ -14,7 +14,7 @@ Resource/tool schemas are stable; results are scoped/paginated and data-as-of ta
 
 ## Dependencies
 
-032, 033, 040, 055
+032, 036, 037, 040, 055
 
 ## Verification
 
@@ -22,4 +22,4 @@ Run MCP contract tests against synthetic fixtures.
 
 ## Status
 
-Not started
+Deferred

@@ -14,7 +14,7 @@ It never modifies active plan without proposal approval; comparison identifies d
 
 ## Dependencies
 
-012, 028, 033, 034, 035, 036, 045, 046, 049
+012, 028, 032, 034, 035, 036, 037, 038, 045, 046, 049
 
 ## Verification
 
@@ -22,4 +22,4 @@ Run scenario-only, conflict, approval, UI, and eval tests.
 
 ## Status
 
-Not started
+Deferred

@@ -51,13 +51,20 @@ export const calculationRuns = sqliteTable("calculation_runs", {
   }).notNull(),
 });
 
-export const institutionConnections = sqliteTable("institution_connections", {
+export const institutions = sqliteTable("institutions", {
   createdAt: text("created_at").notNull(),
-  externalId: text("external_id"),
+  domain: text("domain"),
   id: text("id").primaryKey(),
-  institutionName: text("institution_name").notNull(),
-  institutionUrl: text("institution_url"),
+  name: text("name").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  websiteUrl: text("website_url"),
+});
+
+export const providerConnections = sqliteTable("provider_connections", {
+  createdAt: text("created_at").notNull(),
+  id: text("id").primaryKey(),
   provider: text("provider").notNull(),
+  providerNamespace: text("provider_namespace").notNull(),
   secretKey: text("secret_key"),
   status: text("status", {
     enum: ["connected", "disconnected", "error", "needs_reauth"],
@@ -65,30 +72,102 @@ export const institutionConnections = sqliteTable("institution_connections", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const externalInstitutionConnections = sqliteTable(
+  "external_institution_connections",
+  {
+    createdAt: text("created_at").notNull(),
+    id: text("id").primaryKey(),
+    institutionId: text("institution_id")
+      .notNull()
+      .references(() => institutions.id, { onDelete: "cascade" }),
+    providerConnectionId: text("provider_connection_id")
+      .notNull()
+      .references(() => providerConnections.id),
+    remoteConnectionId: text("remote_connection_id").notNull(),
+    remoteName: text("remote_name").notNull(),
+    remoteOrganizationId: text("remote_organization_id"),
+    remoteOrganizationUrl: text("remote_organization_url"),
+    status: text("status", {
+      enum: ["connected", "disconnected", "error", "needs_reauth"],
+    }).notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+);
+
 export const accounts = sqliteTable("accounts", {
   accountType: text("account_type", {
     enum: [
       "cash",
       "checking",
-      "credit_card",
-      "investment",
-      "loan",
-      "other",
       "savings",
+      "money_market",
+      "certificate_of_deposit",
+      "credit_card",
+      "mortgage",
+      "auto_loan",
+      "student_loan",
+      "personal_loan",
+      "other_loan",
+      "taxable_brokerage",
+      "traditional_ira",
+      "roth_ira",
+      "traditional_sep_ira",
+      "roth_sep_ira",
+      "traditional_simple_ira",
+      "roth_simple_ira",
+      "traditional_401k",
+      "roth_401k",
+      "mixed_401k",
+      "traditional_403b",
+      "roth_403b",
+      "mixed_403b",
+      "traditional_457b",
+      "roth_457b",
+      "mixed_457b",
+      "pension",
+      "other_retirement",
+      "hsa",
+      "529",
+      "other",
+      "unclassified",
     ],
   }).notNull(),
-  connectionId: text("connection_id").references(
-    () => institutionConnections.id,
-    {
-      onDelete: "set null",
-    },
-  ),
   createdAt: text("created_at").notNull(),
   currency: text("currency").notNull(),
+  externalConnectionId: text("external_connection_id").references(
+    () => externalInstitutionConnections.id,
+  ),
   externalId: text("external_id"),
   id: text("id").primaryKey(),
+  institutionId: text("institution_id")
+    .notNull()
+    .references(() => institutions.id),
   name: text("name").notNull(),
   status: text("status", { enum: ["active", "closed", "hidden"] }).notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const accountImportReviews = sqliteTable("account_import_reviews", {
+  accountName: text("account_name").notNull(),
+  accountType: text("account_type").notNull(),
+  candidateInstitutionIdsJson: text("candidate_institution_ids_json").notNull(),
+  createdAt: text("created_at").notNull(),
+  currency: text("currency").notNull(),
+  id: text("id").primaryKey(),
+  matchEvidenceJson: text("match_evidence_json").notNull(),
+  providerConnectionId: text("provider_connection_id")
+    .notNull()
+    .references(() => providerConnections.id),
+  remoteAccountId: text("remote_account_id").notNull(),
+  remoteConnectionId: text("remote_connection_id").notNull(),
+  remoteConnectionName: text("remote_connection_name").notNull(),
+  remoteOrganizationId: text("remote_organization_id"),
+  remoteOrganizationUrl: text("remote_organization_url"),
+  resolvedInstitutionId: text("resolved_institution_id").references(
+    () => institutions.id,
+    { onDelete: "set null" },
+  ),
+  status: text("status", { enum: ["pending", "resolved"] }).notNull(),
   updatedAt: text("updated_at").notNull(),
 });
 

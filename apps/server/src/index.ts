@@ -10,6 +10,8 @@ import {
 import {
   accountBalanceListSchema,
   accountBalanceSchema,
+  accountImportReviewListSchema,
+  accountImportReviewSchema,
   accountListSchema,
   accountSchema,
   budgetCalculationRequestSchema,
@@ -37,7 +39,8 @@ import {
   createCategorizationRuleSchema,
   createCategorySchema,
   createCsvMappingRecordSchema,
-  createInstitutionConnectionSchema,
+  createInstitutionSchema,
+  createProviderConnectionSchema,
   createFinancialGoalSchema,
   createHoldingSchema,
   createInvestmentTransactionSchema,
@@ -55,6 +58,7 @@ import {
   financialGoalSchema,
   forecastObligationListSchema,
   entityIdSchema,
+  externalInstitutionConnectionListSchema,
   healthResponseSchema,
   holdingListSchema,
   holdingSchema,
@@ -66,8 +70,8 @@ import {
   createHouseholdFactSchema,
   createHouseholdSchema,
   createPersonSchema,
-  institutionConnectionListSchema,
-  institutionConnectionSchema,
+  institutionListSchema,
+  institutionSchema,
   incomeClassificationListSchema,
   incomeClassificationSchema,
   incomeClassificationStatusSchema,
@@ -85,9 +89,12 @@ import {
   personListSchema,
   personSchema,
   problem,
+  providerConnectionListSchema,
+  providerConnectionSchema,
   readinessResponseSchema,
   recurringObligationListSchema,
   recurringObligationSchema,
+  resolveAccountImportReviewSchema,
   scenarioAssumptionListSchema,
   scenarioAssumptionSchema,
   securityListSchema,
@@ -104,7 +111,8 @@ import {
   updateAccountSchema,
   updateCategorizationRuleSchema,
   updateCategorySchema,
-  updateInstitutionConnectionSchema,
+  updateInstitutionSchema,
+  updateProviderConnectionSchema,
   updateHouseholdSchema,
   updateHoldingSchema,
 } from "@almanac-fi/api-contracts";
@@ -148,6 +156,12 @@ function notFound(message: string): never {
 function badRequest(message: string): never {
   const error = new Error(message);
   Object.assign(error, { statusCode: 400 });
+  throw error;
+}
+
+function conflict(message: string): never {
+  const error = new Error(message);
+  Object.assign(error, { statusCode: 409 });
   throw error;
 }
 
@@ -236,14 +250,34 @@ export async function createServer(
     { config: { statusCode: 201 } },
     async (request, reply) => {
       const input = parseRequest(createAccountSchema, request.body);
-      if (input.connectionId !== undefined && input.connectionId !== null) {
-        if (!unitOfWork.institutionConnections.findById(input.connectionId)) {
-          notFound("The institution connection does not exist.");
-        }
+      if (Boolean(input.externalConnectionId) !== Boolean(input.externalId)) {
+        badRequest(
+          "External connection and external account ID must be provided together.",
+        );
+      }
+      if (input.accountType === "unclassified" && !input.externalConnectionId) {
+        badRequest("Manual accounts require a specific account type.");
+      }
+      if (!unitOfWork.institutions.findById(input.institutionId)) {
+        notFound("The institution does not exist.");
+      }
+      const externalConnection = input.externalConnectionId
+        ? unitOfWork.externalInstitutionConnections.findById(
+            input.externalConnectionId,
+          )
+        : undefined;
+      if (input.externalConnectionId && !externalConnection) {
+        notFound("The external institution connection does not exist.");
+      }
+      if (
+        externalConnection &&
+        externalConnection.institutionId !== input.institutionId
+      ) {
+        badRequest("The external connection belongs to another institution.");
       }
       const account = unitOfWork.accounts.create({
         ...input,
-        connectionId: input.connectionId ?? null,
+        externalConnectionId: input.externalConnectionId ?? null,
         externalId: input.externalId ?? null,
       });
       return reply.status(201).send(accountSchema.parse(account));
@@ -264,10 +298,40 @@ export async function createServer(
       (request.params as { id?: unknown }).id,
     );
     const input = parseRequest(updateAccountSchema, request.body);
-    if (input.connectionId !== undefined && input.connectionId !== null) {
-      if (!unitOfWork.institutionConnections.findById(input.connectionId)) {
-        notFound("The institution connection does not exist.");
-      }
+    const current = unitOfWork.accounts.findById(id);
+    if (!current) notFound("The account does not exist.");
+    const institutionId = input.institutionId ?? current.institutionId;
+    if (!unitOfWork.institutions.findById(institutionId)) {
+      notFound("The institution does not exist.");
+    }
+    const externalConnectionId =
+      input.externalConnectionId === undefined
+        ? current.externalConnectionId
+        : input.externalConnectionId;
+    const externalId =
+      input.externalId === undefined ? current.externalId : input.externalId;
+    if (Boolean(externalConnectionId) !== Boolean(externalId)) {
+      badRequest(
+        "External connection and external account ID must be provided together.",
+      );
+    }
+    if (
+      (input.accountType ?? current.accountType) === "unclassified" &&
+      !externalConnectionId
+    ) {
+      badRequest("Manual accounts require a specific account type.");
+    }
+    const externalConnection = externalConnectionId
+      ? unitOfWork.externalInstitutionConnections.findById(externalConnectionId)
+      : undefined;
+    if (externalConnectionId && !externalConnection) {
+      notFound("The external institution connection does not exist.");
+    }
+    if (
+      externalConnection &&
+      externalConnection.institutionId !== institutionId
+    ) {
+      badRequest("The external connection belongs to another institution.");
     }
     const account = unitOfWork.accounts.update(id, input);
     if (!account) notFound("The account does not exist.");
@@ -305,52 +369,117 @@ export async function createServer(
     const balance = unitOfWork.accounts.addBalance({ accountId, ...input });
     return reply.status(201).send(accountBalanceSchema.parse(balance));
   });
-  app.get("/institution-connections", async (request) => {
+  app.get("/institutions", async (request) => {
     const page = parseRequest(paginationQuerySchema, request.query);
-    return institutionConnectionListSchema.parse(
-      unitOfWork.institutionConnections.list(page),
-    );
+    return institutionListSchema.parse(unitOfWork.institutions.list(page));
   });
-  app.post("/institution-connections", async (request, reply) => {
-    const input = parseRequest(createInstitutionConnectionSchema, request.body);
-    const connection = unitOfWork.institutionConnections.create({
-      ...input,
-      externalId: input.externalId ?? null,
-      institutionUrl: input.institutionUrl ?? null,
-      secretKey: input.secretKey ?? null,
+  app.post("/institutions", async (request, reply) => {
+    const input = parseRequest(createInstitutionSchema, request.body);
+    const institution = unitOfWork.institutions.create({
+      domain: input.domain ?? null,
+      name: input.name,
+      websiteUrl: input.websiteUrl ?? null,
     });
-    return reply
-      .status(201)
-      .send(institutionConnectionSchema.parse(connection));
+    return reply.status(201).send(institutionSchema.parse(institution));
   });
-  app.get("/institution-connections/:id", async (request) => {
+  app.get("/institutions/:id", async (request) => {
     const id = parseRequest(
       entityIdSchema,
       (request.params as { id?: unknown }).id,
     );
-    const connection = unitOfWork.institutionConnections.findById(id);
-    if (!connection) notFound("The institution connection does not exist.");
-    return institutionConnectionSchema.parse(connection);
+    const institution = unitOfWork.institutions.findById(id);
+    if (!institution) notFound("The institution does not exist.");
+    return institutionSchema.parse(institution);
   });
-  app.patch("/institution-connections/:id", async (request) => {
+  app.patch("/institutions/:id", async (request) => {
     const id = parseRequest(
       entityIdSchema,
       (request.params as { id?: unknown }).id,
     );
-    const input = parseRequest(updateInstitutionConnectionSchema, request.body);
-    const connection = unitOfWork.institutionConnections.update(id, input);
-    if (!connection) notFound("The institution connection does not exist.");
-    return institutionConnectionSchema.parse(connection);
+    const input = parseRequest(updateInstitutionSchema, request.body);
+    const institution = unitOfWork.institutions.update(id, input);
+    if (!institution) notFound("The institution does not exist.");
+    return institutionSchema.parse(institution);
   });
-  app.delete("/institution-connections/:id", async (request, reply) => {
+  app.delete("/institutions/:id", async (request, reply) => {
     const id = parseRequest(
       entityIdSchema,
       (request.params as { id?: unknown }).id,
     );
-    if (!unitOfWork.institutionConnections.delete(id)) {
-      notFound("The institution connection does not exist.");
+    const result = unitOfWork.institutions.delete(id);
+    if (result === "not_found") notFound("The institution does not exist.");
+    if (result === "has_accounts") {
+      conflict("Reassign or delete the institution's accounts first.");
     }
     return reply.status(204).send();
+  });
+  app.get("/provider-connections", async (request) => {
+    const page = parseRequest(paginationQuerySchema, request.query);
+    return providerConnectionListSchema.parse(
+      unitOfWork.providerConnections.list(page),
+    );
+  });
+  app.post("/provider-connections", async (request, reply) => {
+    const input = parseRequest(createProviderConnectionSchema, request.body);
+    const connection = unitOfWork.providerConnections.create({
+      ...input,
+      secretKey: input.secretKey ?? null,
+    });
+    return reply.status(201).send(providerConnectionSchema.parse(connection));
+  });
+  app.get("/provider-connections/:id", async (request) => {
+    const id = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const connection = unitOfWork.providerConnections.findById(id);
+    if (!connection) notFound("The provider connection does not exist.");
+    return providerConnectionSchema.parse(connection);
+  });
+  app.patch("/provider-connections/:id", async (request) => {
+    const id = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const input = parseRequest(updateProviderConnectionSchema, request.body);
+    const connection = unitOfWork.providerConnections.update(id, input);
+    if (!connection) notFound("The provider connection does not exist.");
+    return providerConnectionSchema.parse(connection);
+  });
+  app.delete("/provider-connections/:id", async (request, reply) => {
+    const id = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    if (!unitOfWork.providerConnections.revoke(id)) {
+      notFound("The provider connection does not exist.");
+    }
+    return reply.status(204).send();
+  });
+  app.get("/external-institution-connections", async (request) => {
+    const page = parseRequest(paginationQuerySchema, request.query);
+    return externalInstitutionConnectionListSchema.parse(
+      unitOfWork.externalInstitutionConnections.list(page),
+    );
+  });
+  app.get("/account-import-reviews", async (request) => {
+    const page = parseRequest(paginationQuerySchema, request.query);
+    return accountImportReviewListSchema.parse(
+      unitOfWork.accountImportReviews.list(page),
+    );
+  });
+  app.post("/account-import-reviews/:id/resolve", async (request) => {
+    const id = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const input = parseRequest(resolveAccountImportReviewSchema, request.body);
+    if (!unitOfWork.institutions.findById(input.institutionId)) {
+      notFound("The institution does not exist.");
+    }
+    const review = unitOfWork.accountImportReviews.resolve(id, input);
+    if (!review) notFound("The import review does not exist.");
+    return accountImportReviewSchema.parse(review);
   });
   app.get("/categories", async (request) => {
     const page = parseRequest(paginationQuerySchema, request.query);

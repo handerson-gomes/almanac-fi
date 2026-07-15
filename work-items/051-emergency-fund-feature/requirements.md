@@ -14,7 +14,7 @@ Outputs distinguish facts and assumptions; it reads shared forecast/ledger befor
 
 ## Dependencies
 
-012, 028, 032, 034, 035, 036, 045, 046, 049
+012, 028, 032, 034, 035, 036, 037, 038, 045, 046, 049
 
 ## Verification
 
@@ -22,4 +22,4 @@ Run calculations, workflow, allocation conflict, UI, MCP contract, and eval test
 
 ## Status
 
-Not started
+Deferred

@@ -4,6 +4,8 @@
 
 Almanac FI is a local-first workbench for tracking, forecasting, and (eventually) automating your path to FI. It is a strict TypeScript, ESM-first pnpm workspace organized as a modular monolith: financial behavior belongs in reusable packages, while server, dashboard, CLI, and MCP delivery surfaces stay separate.
 
+Before changing financial-domain models or planning behavior, read [System Structure](./doc/system-structure.md). It defines which records are authoritative, how actuals, income forecasts, budgets, goals, and allocations relate, and the boundaries future extensions must preserve.
+
 ## Prerequisites
 
 - Node.js 22 or newer (the checked-in `.node-version` records the development version)
@@ -20,6 +22,12 @@ pnpm dev
 ```
 
 `pnpm dev` starts the Fastify API at `http://127.0.0.1:4310`; `pnpm dev:web` starts the Vite dashboard with its `/api` proxy. Use `pnpm dev:cli` or `pnpm dev:mcp` for the other boundary bootstraps. `pnpm start` runs the compiled API after `pnpm build`.
+
+### Resetting pre-016a local data
+
+Work item 016a intentionally replaces the pre-release account schema without a data migration. Existing databases that contain the old `institution_connections` model are not compatible.
+
+To reset, stop every Almanac FI process, back up anything you may need, and then explicitly delete `almanac-fi.sqlite` from the configured `ALMANAC_FI_DATA_HOME`. The default data home is `~/Library/Application Support/almanac-fi` on macOS, `%APPDATA%/almanac-fi` on Windows, and `${XDG_DATA_HOME:-~/.local/share}/almanac-fi` on Linux. Starting the server creates the new database. This permanently removes local accounts, transactions, imports, balances, holdings, obligations, and audit history; recreate institutions and accounts before rerunning CSV imports.
 
 ## Workspace layout
 

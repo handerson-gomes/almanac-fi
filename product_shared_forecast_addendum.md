@@ -2,6 +2,8 @@
 
 This document is intended to be appended to the existing Product Definition.
 
+The canonical vocabulary and data-authority boundaries for these concepts are defined in [System Structure](./doc/system-structure.md).
+
 # Architectural Invariant: Shared Forecast & Allocation Engine
 
 > No planner owns future financial state. Every planner consumes the same versioned household forecast and proposes changes through a single shared allocation ledger.

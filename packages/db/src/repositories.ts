@@ -25,6 +25,13 @@ import {
   type ObligationRepository,
 } from "./obligations.js";
 import { createBudgetRepository, type BudgetRepository } from "./budgets.js";
+import {
+  createInstitutionServices,
+  type AccountImportReviewRepository,
+  type ExternalInstitutionConnectionRepository,
+  type InstitutionRepository,
+  type ProviderConnectionRepository,
+} from "./institutions.js";
 
 export type Page<T> = Readonly<{ items: readonly T[]; nextCursor?: string }>;
 export type PageRequest = Readonly<{
@@ -61,11 +68,37 @@ export type AuditEvent = Readonly<{
 export const accountTypes = [
   "cash",
   "checking",
-  "credit_card",
-  "investment",
-  "loan",
-  "other",
   "savings",
+  "money_market",
+  "certificate_of_deposit",
+  "credit_card",
+  "mortgage",
+  "auto_loan",
+  "student_loan",
+  "personal_loan",
+  "other_loan",
+  "taxable_brokerage",
+  "traditional_ira",
+  "roth_ira",
+  "traditional_sep_ira",
+  "roth_sep_ira",
+  "traditional_simple_ira",
+  "roth_simple_ira",
+  "traditional_401k",
+  "roth_401k",
+  "mixed_401k",
+  "traditional_403b",
+  "roth_403b",
+  "mixed_403b",
+  "traditional_457b",
+  "roth_457b",
+  "mixed_457b",
+  "pension",
+  "other_retirement",
+  "hsa",
+  "529",
+  "other",
+  "unclassified",
 ] as const;
 export type AccountType = (typeof accountTypes)[number];
 export const accountStatuses = ["active", "closed", "hidden"] as const;
@@ -78,24 +111,14 @@ export const connectionStatuses = [
 ] as const;
 export type ConnectionStatus = (typeof connectionStatuses)[number];
 
-export type InstitutionConnection = Readonly<{
-  createdAt: string;
-  externalId: string | null;
-  id: string;
-  institutionName: string;
-  institutionUrl: string | null;
-  provider: string;
-  secretKey: string | null;
-  status: ConnectionStatus;
-  updatedAt: string;
-}>;
 export type Account = Readonly<{
   accountType: AccountType;
-  connectionId: string | null;
   createdAt: string;
   currency: string;
+  externalConnectionId: string | null;
   externalId: string | null;
   id: string;
+  institutionId: string;
   name: string;
   status: AccountStatus;
   updatedAt: string;
@@ -232,24 +255,14 @@ type CategorizationRuleUpdate = {
       | "precedence"
   ]?: CategorizationRule[Key] | undefined;
 };
-type InstitutionConnectionUpdate = {
-  [
-    Key in
-      | "externalId"
-      | "institutionName"
-      | "institutionUrl"
-      | "provider"
-      | "secretKey"
-      | "status"
-  ]?: InstitutionConnection[Key] | undefined;
-};
 type AccountUpdate = {
   [
     Key in
       | "accountType"
-      | "connectionId"
       | "currency"
+      | "externalConnectionId"
       | "externalId"
+      | "institutionId"
       | "name"
       | "status"
   ]?: Account[Key] | undefined;
@@ -272,19 +285,6 @@ export interface SourceRecordRepository {
 export interface AuditEventRepository {
   append(input: Omit<AuditEvent, "createdAt" | "id">): AuditEvent;
   list(page?: PageRequest): Page<AuditEvent>;
-}
-
-export interface InstitutionConnectionRepository {
-  create(
-    input: Omit<InstitutionConnection, "createdAt" | "id" | "updatedAt">,
-  ): InstitutionConnection;
-  delete(id: string): boolean;
-  findById(id: string): InstitutionConnection | undefined;
-  list(page?: PageRequest): Page<InstitutionConnection>;
-  update(
-    id: string,
-    input: InstitutionConnectionUpdate,
-  ): InstitutionConnection | undefined;
 }
 
 export interface AccountRepository {
@@ -415,13 +415,16 @@ export interface UnitOfWork {
   readonly categorizationRules: CategorizationRuleRepository;
   readonly categorizationReviews: CategorizationReviewRepository;
   readonly csvMappings: CsvMappingRepository;
+  readonly accountImportReviews: AccountImportReviewRepository;
+  readonly externalInstitutionConnections: ExternalInstitutionConnectionRepository;
   readonly importBatches: ImportBatchRepository;
-  readonly institutionConnections: InstitutionConnectionRepository;
+  readonly institutions: InstitutionRepository;
   readonly incomeClassifications: IncomeClassificationRepository;
   readonly households: HouseholdRepository;
   readonly goals: GoalRepository;
   readonly investments: InvestmentRepository;
   readonly obligations: ObligationRepository;
+  readonly providerConnections: ProviderConnectionRepository;
   readonly sourceRecords: SourceRecordRepository;
   readonly transactions: TransactionRepository;
   readonly transferMatches: TransferMatchRepository;
@@ -448,99 +451,7 @@ function parseTransactionCursor(
 }
 
 export function createUnitOfWork(database: AppDatabase): UnitOfWork {
-  const institutionConnections: InstitutionConnectionRepository = {
-    create(input) {
-      const timestamp = now();
-      const record: InstitutionConnection = {
-        ...input,
-        createdAt: timestamp,
-        id: randomUUID(),
-        updatedAt: timestamp,
-      };
-      database.sqlite
-        .prepare(
-          "INSERT INTO institution_connections (id, provider, institution_name, institution_url, external_id, status, secret_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
-        .run(
-          record.id,
-          record.provider,
-          record.institutionName,
-          record.institutionUrl,
-          record.externalId,
-          record.status,
-          record.secretKey,
-          record.createdAt,
-          record.updatedAt,
-        );
-      return record;
-    },
-    delete(id) {
-      return (
-        database.sqlite
-          .prepare("DELETE FROM institution_connections WHERE id = ?")
-          .run(id).changes > 0
-      );
-    },
-    findById(id) {
-      return database.sqlite
-        .prepare(
-          "SELECT id, provider, institution_name AS institutionName, institution_url AS institutionUrl, external_id AS externalId, status, secret_key AS secretKey, created_at AS createdAt, updated_at AS updatedAt FROM institution_connections WHERE id = ?",
-        )
-        .get(id) as InstitutionConnection | undefined;
-    },
-    list(request) {
-      const limit = pageSize(request);
-      const rows = database.sqlite
-        .prepare(
-          "SELECT id, provider, institution_name AS institutionName, institution_url AS institutionUrl, external_id AS externalId, status, secret_key AS secretKey, created_at AS createdAt, updated_at AS updatedAt FROM institution_connections WHERE id > ? ORDER BY id LIMIT ?",
-        )
-        .all(request?.cursor ?? "", limit + 1) as InstitutionConnection[];
-      const items = rows.slice(0, limit);
-      const nextCursor = rows.length > limit ? items.at(-1)?.id : undefined;
-      return nextCursor ? { items, nextCursor } : { items };
-    },
-    update(id, input) {
-      const current = institutionConnections.findById(id);
-      if (!current) return undefined;
-      const record: InstitutionConnection = {
-        createdAt: current.createdAt,
-        externalId:
-          input.externalId === undefined
-            ? current.externalId
-            : input.externalId,
-        id: current.id,
-        institutionName:
-          input.institutionName === undefined
-            ? current.institutionName
-            : input.institutionName,
-        institutionUrl:
-          input.institutionUrl === undefined
-            ? current.institutionUrl
-            : input.institutionUrl,
-        provider:
-          input.provider === undefined ? current.provider : input.provider,
-        secretKey:
-          input.secretKey === undefined ? current.secretKey : input.secretKey,
-        status: input.status === undefined ? current.status : input.status,
-        updatedAt: now(),
-      };
-      database.sqlite
-        .prepare(
-          "UPDATE institution_connections SET provider = ?, institution_name = ?, institution_url = ?, external_id = ?, status = ?, secret_key = ?, updated_at = ? WHERE id = ?",
-        )
-        .run(
-          record.provider,
-          record.institutionName,
-          record.institutionUrl,
-          record.externalId,
-          record.status,
-          record.secretKey,
-          record.updatedAt,
-          id,
-        );
-      return record;
-    },
-  };
+  const institutionServices = createInstitutionServices(database);
   const accounts: AccountRepository = {
     addBalance(input) {
       const record: AccountBalance = {
@@ -572,7 +483,7 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
       };
       database.sqlite
         .prepare(
-          "INSERT INTO accounts (id, name, account_type, currency, status, connection_id, external_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO accounts (id, name, account_type, currency, status, institution_id, external_connection_id, external_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .run(
           record.id,
@@ -580,7 +491,8 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
           record.accountType,
           record.currency,
           record.status,
-          record.connectionId,
+          record.institutionId,
+          record.externalConnectionId,
           record.externalId,
           record.createdAt,
           record.updatedAt,
@@ -596,7 +508,7 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
     findById(id) {
       return database.sqlite
         .prepare(
-          "SELECT id, name, account_type AS accountType, currency, status, connection_id AS connectionId, external_id AS externalId, created_at AS createdAt, updated_at AS updatedAt FROM accounts WHERE id = ?",
+          "SELECT id, name, account_type AS accountType, currency, status, institution_id AS institutionId, external_connection_id AS externalConnectionId, external_id AS externalId, created_at AS createdAt, updated_at AS updatedAt FROM accounts WHERE id = ?",
         )
         .get(id) as Account | undefined;
     },
@@ -604,7 +516,7 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
       const limit = pageSize(request);
       const rows = database.sqlite
         .prepare(
-          "SELECT id, name, account_type AS accountType, currency, status, connection_id AS connectionId, external_id AS externalId, created_at AS createdAt, updated_at AS updatedAt FROM accounts WHERE id > ? ORDER BY id LIMIT ?",
+          "SELECT id, name, account_type AS accountType, currency, status, institution_id AS institutionId, external_connection_id AS externalConnectionId, external_id AS externalId, created_at AS createdAt, updated_at AS updatedAt FROM accounts WHERE id > ? ORDER BY id LIMIT ?",
         )
         .all(request?.cursor ?? "", limit + 1) as Account[];
       const items = rows.slice(0, limit);
@@ -630,10 +542,6 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
           input.accountType === undefined
             ? current.accountType
             : input.accountType,
-        connectionId:
-          input.connectionId === undefined
-            ? current.connectionId
-            : input.connectionId,
         createdAt: current.createdAt,
         currency:
           input.currency === undefined ? current.currency : input.currency,
@@ -641,21 +549,30 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
           input.externalId === undefined
             ? current.externalId
             : input.externalId,
+        externalConnectionId:
+          input.externalConnectionId === undefined
+            ? current.externalConnectionId
+            : input.externalConnectionId,
         id: current.id,
+        institutionId:
+          input.institutionId === undefined
+            ? current.institutionId
+            : input.institutionId,
         name: input.name === undefined ? current.name : input.name,
         status: input.status === undefined ? current.status : input.status,
         updatedAt: now(),
       };
       database.sqlite
         .prepare(
-          "UPDATE accounts SET name = ?, account_type = ?, currency = ?, status = ?, connection_id = ?, external_id = ?, updated_at = ? WHERE id = ?",
+          "UPDATE accounts SET name = ?, account_type = ?, currency = ?, status = ?, institution_id = ?, external_connection_id = ?, external_id = ?, updated_at = ? WHERE id = ?",
         )
         .run(
           record.name,
           record.accountType,
           record.currency,
           record.status,
-          record.connectionId,
+          record.institutionId,
+          record.externalConnectionId,
           record.externalId,
           record.updatedAt,
           id,
@@ -1571,6 +1488,7 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
     auditEvents.append({ ...input, sourceRecordId: null });
   });
   return Object.freeze({
+    accountImportReviews: institutionServices.accountImportReviews,
     accounts,
     budgets,
     auditEvents,
@@ -1578,13 +1496,16 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
     categorizationRules,
     categorizationReviews,
     csvMappings,
+    externalInstitutionConnections:
+      institutionServices.externalInstitutionConnections,
     importBatches,
-    institutionConnections,
+    institutions: institutionServices.institutions,
     incomeClassifications,
     households,
     goals,
     investments,
     obligations,
+    providerConnections: institutionServices.providerConnections,
     sourceRecords,
     transactions,
     transferMatches,

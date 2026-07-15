@@ -22,4 +22,4 @@ Run fake-provider streaming, retry, and run-record tests.
 
 ## Status
 
-Not started
+Deferred
