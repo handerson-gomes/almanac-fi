@@ -46,6 +46,10 @@ import {
   createAllocationLedgerRepository,
   type AllocationLedgerRepository,
 } from "./allocation-ledger.js";
+import {
+  createPlanningRepository,
+  type PlanningRepository,
+} from "./planning.js";
 
 export type Page<T> = Readonly<{ items: readonly T[]; nextCursor?: string }>;
 export type PageRequest = Readonly<{
@@ -458,6 +462,7 @@ export interface UnitOfWork {
   readonly investments: InvestmentRepository;
   readonly obligations: ObligationRepository;
   readonly providerConnections: ProviderConnectionRepository;
+  readonly planning: PlanningRepository;
   readonly sourceRecords: SourceRecordRepository;
   readonly transactions: TransactionRepository;
   readonly transferMatches: TransferMatchRepository;
@@ -1581,6 +1586,9 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
   const budgets = createBudgetRepository(database, (input) => {
     auditEvents.append({ ...input, sourceRecordId: null });
   });
+  const planning = createPlanningRepository(database, (input) => {
+    auditEvents.append({ ...input, sourceRecordId: null });
+  });
   return Object.freeze({
     accountImportReviews: institutionServices.accountImportReviews,
     allocationLedger,
@@ -1605,6 +1613,7 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
     investments,
     obligations,
     providerConnections: institutionServices.providerConnections,
+    planning,
     sourceRecords,
     transactions,
     transferMatches,

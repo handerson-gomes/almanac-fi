@@ -549,6 +549,54 @@ const migrations = [
       DROP INDEX IF EXISTS allocation_ledger_runs_household; DROP TABLE IF EXISTS allocation_ledger_entries;
       DROP TABLE IF EXISTS allocation_ledger_months; DROP TABLE IF EXISTS allocation_ledger_runs;`,
   },
+  {
+    id: "0017_plan_versioning_and_scenarios",
+    up: `
+      CREATE TABLE IF NOT EXISTS plan_versions (
+        id TEXT PRIMARY KEY, household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+        parent_version_id TEXT REFERENCES plan_versions(id), label TEXT NOT NULL,
+        source TEXT NOT NULL CHECK(source IN ('initial', 'scenario_apply', 'rollback')),
+        is_active INTEGER NOT NULL CHECK(is_active IN (0, 1)),
+        created_at TEXT NOT NULL, created_by TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS plan_versions_one_active_per_household
+        ON plan_versions(household_id) WHERE is_active = 1;
+      CREATE TABLE IF NOT EXISTS plan_version_inputs (
+        id TEXT PRIMARY KEY, plan_version_id TEXT NOT NULL REFERENCES plan_versions(id) ON DELETE CASCADE,
+        input_type TEXT NOT NULL CHECK(input_type IN ('income_assumption', 'budget', 'goal', 'obligation', 'allocation_rule')),
+        input_id TEXT NOT NULL, value_json TEXT NOT NULL,
+        UNIQUE(plan_version_id, input_type, input_id)
+      );
+      CREATE TABLE IF NOT EXISTS planning_scenarios (
+        id TEXT PRIMARY KEY, household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+        base_plan_version_id TEXT NOT NULL REFERENCES plan_versions(id), name TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('draft', 'applied')),
+        created_at TEXT NOT NULL, created_by TEXT NOT NULL, applied_plan_version_id TEXT REFERENCES plan_versions(id),
+        UNIQUE(household_id, name)
+      );
+      CREATE TABLE IF NOT EXISTS planning_scenario_overrides (
+        id TEXT PRIMARY KEY, scenario_id TEXT NOT NULL REFERENCES planning_scenarios(id) ON DELETE CASCADE,
+        input_type TEXT NOT NULL CHECK(input_type IN ('income_assumption', 'budget', 'goal', 'obligation', 'allocation_rule')),
+        input_id TEXT NOT NULL, patch_json TEXT NOT NULL,
+        UNIQUE(scenario_id, input_type, input_id)
+      );
+      CREATE TABLE IF NOT EXISTS plan_forecast_versions (
+        id TEXT PRIMARY KEY, plan_version_id TEXT NOT NULL UNIQUE REFERENCES plan_versions(id) ON DELETE CASCADE,
+        input_checksum TEXT NOT NULL, forecast_json TEXT NOT NULL, created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS plan_ledger_versions (
+        id TEXT PRIMARY KEY, plan_version_id TEXT NOT NULL UNIQUE REFERENCES plan_versions(id) ON DELETE CASCADE,
+        input_checksum TEXT NOT NULL, ledger_json TEXT NOT NULL, created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS planning_scenarios_base_version ON planning_scenarios(base_plan_version_id);
+      CREATE INDEX IF NOT EXISTS plan_version_inputs_version ON plan_version_inputs(plan_version_id, input_type, input_id);
+    `,
+    down: `DROP INDEX IF EXISTS plan_version_inputs_version; DROP INDEX IF EXISTS planning_scenarios_base_version;
+      DROP TABLE IF EXISTS plan_ledger_versions; DROP TABLE IF EXISTS plan_forecast_versions;
+      DROP TABLE IF EXISTS planning_scenario_overrides; DROP TABLE IF EXISTS planning_scenarios;
+      DROP TABLE IF EXISTS plan_version_inputs; DROP INDEX IF EXISTS plan_versions_one_active_per_household;
+      DROP TABLE IF EXISTS plan_versions;`,
+  },
 ] as const;
 
 export type AppDatabase = Readonly<{

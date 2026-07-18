@@ -45,6 +45,10 @@
       "types": "./dist/allocation-ledger.d.ts",
       "import": "./dist/allocation-ledger.js"
     },
+    "./planning": {
+      "types": "./dist/planning.d.ts",
+      "import": "./dist/planning.js"
+    },
     "./budgets": {
       "types": "./dist/budgets.d.ts",
       "import": "./dist/budgets.js"

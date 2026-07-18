@@ -547,6 +547,63 @@ export const allocationLedgerEntries = sqliteTable(
   },
 );
 
+export const planVersions = sqliteTable("plan_versions", {
+  createdAt: text("created_at").notNull(),
+  createdBy: text("created_by").notNull(),
+  householdId: text("household_id").notNull(),
+  id: text("id").primaryKey(),
+  isActive: integer("is_active", { mode: "boolean" }).notNull(),
+  label: text("label").notNull(),
+  parentVersionId: text("parent_version_id"),
+  source: text("source").notNull(),
+});
+
+export const planVersionInputs = sqliteTable("plan_version_inputs", {
+  id: text("id").primaryKey(),
+  inputId: text("input_id").notNull(),
+  inputType: text("input_type").notNull(),
+  planVersionId: text("plan_version_id").notNull(),
+  valueJson: text("value_json").notNull(),
+});
+
+export const planningScenarios = sqliteTable("planning_scenarios", {
+  appliedPlanVersionId: text("applied_plan_version_id"),
+  basePlanVersionId: text("base_plan_version_id").notNull(),
+  createdAt: text("created_at").notNull(),
+  createdBy: text("created_by").notNull(),
+  householdId: text("household_id").notNull(),
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  status: text("status").notNull(),
+});
+
+export const planningScenarioOverrides = sqliteTable(
+  "planning_scenario_overrides",
+  {
+    id: text("id").primaryKey(),
+    inputId: text("input_id").notNull(),
+    inputType: text("input_type").notNull(),
+    patchJson: text("patch_json").notNull(),
+    scenarioId: text("scenario_id").notNull(),
+  },
+);
+
+export const planForecastVersions = sqliteTable("plan_forecast_versions", {
+  createdAt: text("created_at").notNull(),
+  forecastJson: text("forecast_json").notNull(),
+  id: text("id").primaryKey(),
+  inputChecksum: text("input_checksum").notNull(),
+  planVersionId: text("plan_version_id").notNull(),
+});
+
+export const planLedgerVersions = sqliteTable("plan_ledger_versions", {
+  createdAt: text("created_at").notNull(),
+  id: text("id").primaryKey(),
+  inputChecksum: text("input_checksum").notNull(),
+  ledgerJson: text("ledger_json").notNull(),
+  planVersionId: text("plan_version_id").notNull(),
+});
+
 export const csvMappings = sqliteTable("csv_mappings", {
   createdAt: text("created_at").notNull(),
   id: text("id").primaryKey(),
