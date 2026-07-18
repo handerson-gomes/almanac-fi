@@ -987,6 +987,42 @@ export const budgetCalculationSchema = z.object({
 });
 export type BudgetCalculation = z.infer<typeof budgetCalculationSchema>;
 
+export const financialStateQuerySchema = z.object({
+  asOf: z.iso.datetime().optional(),
+  currency: currencySchema.default("USD"),
+});
+export const financialStateWarningSchema = z.object({
+  code: z.enum(["missing_balance", "missing_valuation", "stale_balance"]),
+  entityId: entityIdSchema,
+  message: z.string(),
+});
+export const financialStateSchema = z.object({
+  accountIds: z.array(entityIdSchema),
+  activity: z.object({
+    confirmedTransferCount: z.number().int().nonnegative(),
+    currentTransactionCount: z.number().int().nonnegative(),
+    inflowMinor: z.number().int().safe(),
+    outflowMinor: z.number().int().safe(),
+  }),
+  asOf: z.iso.datetime(),
+  availableBalanceMinor: z.number().int().safe(),
+  budgetActuals: z.array(
+    z.object({
+      actualAmountMinor: z.number().int().safe(),
+      periodId: entityIdSchema,
+    }),
+  ),
+  calculationVersion: z.literal("financial-state-v1"),
+  currency: currencySchema,
+  currentBalanceMinor: z.number().int().safe(),
+  investmentValueMinor: z.number().int().safe(),
+  liabilityBalanceMinor: z.number().int().safe(),
+  netWorthMinor: z.number().int().safe(),
+  spendableFundsMinor: z.number().int().safe(),
+  warnings: z.array(financialStateWarningSchema),
+});
+export type FinancialState = z.infer<typeof financialStateSchema>;
+
 export const budgetSchema = z.object({
   createdAt: z.iso.datetime(),
   currency: currencySchema,
@@ -1073,6 +1109,12 @@ export const openApiDocument = Object.freeze({
   info: { title: "Almanac FI API", version: "0.0.0" },
   openapi: "3.1.0",
   paths: {
+    "/financial-state": {
+      get: {
+        operationId: "getFinancialState",
+        responses: { "200": { description: "Authoritative financial state" } },
+      },
+    },
     "/accounts": {
       get: {
         operationId: "listAccounts",

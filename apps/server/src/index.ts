@@ -59,6 +59,8 @@ import {
   forecastObligationListSchema,
   entityIdSchema,
   externalInstitutionConnectionListSchema,
+  financialStateQuerySchema,
+  financialStateSchema,
   healthResponseSchema,
   holdingListSchema,
   holdingSchema,
@@ -299,6 +301,15 @@ export async function createServer(
         badRequest("Transactions cannot use archived categories.");
     }
   };
+  app.get("/financial-state", async (request) => {
+    const input = parseRequest(financialStateQuerySchema, request.query);
+    const asOf = input.asOf ?? now();
+    return financialStateSchema.parse({
+      ...unitOfWork.financialState.snapshot({ asOf, currency: input.currency }),
+      asOf,
+      currency: input.currency,
+    });
+  });
   app.get("/accounts", async (request) => {
     const page = parseRequest(paginationQuerySchema, request.query);
     return accountListSchema.parse(unitOfWork.accounts.list(page));

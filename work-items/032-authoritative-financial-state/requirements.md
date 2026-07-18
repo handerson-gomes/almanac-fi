@@ -24,4 +24,4 @@ Run cross-check fixtures for cash, credit, investment, liability, stale-balance,
 
 ## Status
 
-Not started
+Complete

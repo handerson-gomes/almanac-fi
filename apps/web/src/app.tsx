@@ -48,6 +48,7 @@ import {
   getHouseholdFacts,
   getHouseholds,
   getFinancialGoals,
+  getFinancialState,
   getScenarioAssumptions,
   getPeople,
   getTransaction,
@@ -147,6 +148,19 @@ function formatMinorUnits(amountMinor: number): string {
   const major = Math.floor(absolute / 100).toLocaleString();
   const minor = String(absolute % 100).padStart(2, "0");
   return `${sign}${major}.${minor}`;
+}
+
+function parseMoneyInput(value: string): number {
+  const normalized = value.trim().replaceAll(",", "").replaceAll("$", "");
+  const match = /^([+-]?)(\d+)(?:\.(\d{1,2}))?$/.exec(normalized);
+  if (!match)
+    throw new Error("Enter an amount with at most two decimal places.");
+  const major = Number(match[2]);
+  const minor = Number((match[3] ?? "").padEnd(2, "0"));
+  const amount = major * 100 + minor;
+  if (!Number.isSafeInteger(amount))
+    throw new Error("Amount is outside the supported range.");
+  return match[1] === "-" ? -amount : amount;
 }
 
 function CsvImport(): React.JSX.Element {
@@ -483,6 +497,9 @@ function Transactions(): React.JSX.Element {
   const accountNames = new Map(
     accounts.data?.map((account) => [account.id, account.name]),
   );
+  const manualAccount = accounts.data?.find(
+    (account) => account.id === manualAccountId,
+  );
   const createManual = useMutation({
     mutationFn: () => {
       const account = accounts.data?.find(
@@ -491,7 +508,7 @@ function Transactions(): React.JSX.Element {
       if (!account) throw new Error("Select an account.");
       return createManualTransaction({
         accountId: account.id,
-        amountMinor: Number(manualAmountMinor),
+        amountMinor: parseMoneyInput(manualAmountMinor),
         categoryId: manualCategoryId || null,
         currency: account.currency,
         merchant: manualDescription,
@@ -499,7 +516,7 @@ function Transactions(): React.JSX.Element {
         postedAt: null,
         sourceCategory: null,
         splits: manualSplits.map((split) => ({
-          amountMinor: Number(split.amountMinor),
+          amountMinor: parseMoneyInput(split.amountMinor),
           categoryId: split.categoryId || null,
           memo: split.memo || null,
         })),
@@ -583,12 +600,16 @@ function Transactions(): React.JSX.Element {
           required
           value={manualDescription}
         />
-        <label htmlFor="manual-transaction-amount">Amount (minor units)</label>
+        <label htmlFor="manual-transaction-amount">
+          Amount ({manualAccount?.currency ?? "currency"}; use - for an expense)
+        </label>
         <input
           id="manual-transaction-amount"
           onChange={(event) => setManualAmountMinor(event.target.value)}
           required
-          step="1"
+          inputMode="decimal"
+          placeholder="0.00"
+          step="0.01"
           type="number"
           value={manualAmountMinor}
         />
@@ -612,7 +633,7 @@ function Transactions(): React.JSX.Element {
           {manualSplits.map((split, index) => (
             <div key={index}>
               <label htmlFor={`manual-split-amount-${index}`}>
-                Amount (minor units)
+                Amount ({manualAccount?.currency ?? "currency"})
               </label>
               <input
                 id={`manual-split-amount-${index}`}
@@ -626,7 +647,9 @@ function Transactions(): React.JSX.Element {
                   )
                 }
                 required
-                step="1"
+                inputMode="decimal"
+                placeholder="0.00"
+                step="0.01"
                 type="number"
                 value={split.amountMinor}
               />
@@ -1140,7 +1163,7 @@ function Accounts(): React.JSX.Element {
   const addBalance = useMutation({
     mutationFn: () =>
       createAccountBalance(balanceAccountId, {
-        amountMinor: Number(balanceAmountMinor),
+        amountMinor: parseMoneyInput(balanceAmountMinor),
         asOf: new Date(balanceAsOf).toISOString(),
         availableAmountMinor: null,
       }),
@@ -1248,12 +1271,19 @@ function Accounts(): React.JSX.Element {
             </option>
           ))}
         </select>
-        <label htmlFor="manual-balance-amount">Balance (minor units)</label>
+        <label htmlFor="manual-balance-amount">
+          Balance (
+          {accounts.data?.find((account) => account.id === balanceAccountId)
+            ?.currency ?? "currency"}
+          )
+        </label>
         <input
           id="manual-balance-amount"
           onChange={(event) => setBalanceAmountMinor(event.target.value)}
           required
-          step="1"
+          inputMode="decimal"
+          placeholder="0.00"
+          step="0.01"
           type="number"
           value={balanceAmountMinor}
         />
@@ -1564,12 +1594,58 @@ function Overview(): React.JSX.Element {
     queryKey: ["health"],
     retry: false,
   });
+  const financialState = useQuery({
+    queryFn: () => getFinancialState(),
+    queryKey: ["financial-state", "USD"],
+  });
   return (
     <section aria-labelledby="overview-heading" className="page">
       <h2 id="overview-heading">Workspace overview</h2>
       {health.isPending ? <p role="status">Checking local API…</p> : null}
       {health.isError ? <p role="alert">{health.error.message}</p> : null}
       {health.data === "ok" ? <p role="status">Local API is ready.</p> : null}
+      <section aria-labelledby="financial-state-heading">
+        <h3 id="financial-state-heading">Current financial state</h3>
+        {financialState.isPending ? (
+          <p role="status">Calculating current balances…</p>
+        ) : null}
+        {financialState.isError ? (
+          <p role="alert">{financialState.error.message}</p>
+        ) : null}
+        {financialState.data ? (
+          <>
+            <dl className="transaction-detail-grid">
+              <dt>Spendable today</dt>
+              <dd>
+                {formatMinorUnits(financialState.data.spendableFundsMinor)}
+              </dd>
+              <dt>Investments</dt>
+              <dd>
+                {formatMinorUnits(financialState.data.investmentValueMinor)}
+              </dd>
+              <dt>Liabilities</dt>
+              <dd>
+                {formatMinorUnits(-financialState.data.liabilityBalanceMinor)}
+              </dd>
+              <dt>Net worth</dt>
+              <dd>{formatMinorUnits(financialState.data.netWorthMinor)}</dd>
+            </dl>
+            <p>
+              As of {financialState.data.asOf}. CDs and investments are excluded
+              from spendable funds.
+            </p>
+            {financialState.data.warnings.length > 0 ? (
+              <ul aria-label="Financial-state warnings">
+                {financialState.data.warnings.map((warning) => (
+                  <li key={`${warning.code}-${warning.entityId}`}>
+                    {warning.message}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </>
+        ) : null}
+      </section>
     </section>
   );
 }

@@ -32,6 +32,10 @@ import {
   type InstitutionRepository,
   type ProviderConnectionRepository,
 } from "./institutions.js";
+import {
+  createFinancialStateRepository,
+  type FinancialStateRepository,
+} from "./financial-state.js";
 
 export type Page<T> = Readonly<{ items: readonly T[]; nextCursor?: string }>;
 export type PageRequest = Readonly<{
@@ -431,6 +435,7 @@ export interface UnitOfWork {
   readonly csvMappings: CsvMappingRepository;
   readonly accountImportReviews: AccountImportReviewRepository;
   readonly externalInstitutionConnections: ExternalInstitutionConnectionRepository;
+  readonly financialState: FinancialStateRepository;
   readonly importBatches: ImportBatchRepository;
   readonly institutions: InstitutionRepository;
   readonly incomeClassifications: IncomeClassificationRepository;
@@ -466,6 +471,7 @@ function parseTransactionCursor(
 
 export function createUnitOfWork(database: AppDatabase): UnitOfWork {
   const institutionServices = createInstitutionServices(database);
+  const financialState = createFinancialStateRepository(database);
   const accounts: AccountRepository = {
     addBalance(input) {
       const record: AccountBalance = {
@@ -1552,6 +1558,7 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
     csvMappings,
     externalInstitutionConnections:
       institutionServices.externalInstitutionConnections,
+    financialState,
     importBatches,
     institutions: institutionServices.institutions,
     incomeClassifications,

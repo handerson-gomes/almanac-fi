@@ -5,6 +5,7 @@ import {
   basisPointsSchema,
   classifyIncome,
   calculateBudget,
+  calculateFinancialState,
   detectTransferCandidates,
   excludeConfirmedTransfers,
   isoDateSchema,
@@ -68,6 +69,67 @@ describe("financial primitives", () => {
       currency: "EUR",
     });
     expect(isoDateSchema.parse("2026-07-12")).toBe("2026-07-12");
+  });
+});
+
+describe("authoritative financial state", () => {
+  test("keeps CDs and investments out of spendable funds", () => {
+    const state = calculateFinancialState(
+      [
+        {
+          accountId: "checking",
+          accountType: "checking",
+          availableAmountMinor: 8_000,
+          balanceAsOf: "2026-07-17T00:00:00.000Z",
+          balanceMinor: 10_000,
+          hasHoldings: false,
+          investmentValueMinor: null,
+          liabilityBalanceMinor: null,
+        },
+        {
+          accountId: "cd",
+          accountType: "certificate_of_deposit",
+          availableAmountMinor: null,
+          balanceAsOf: "2026-07-17T00:00:00.000Z",
+          balanceMinor: 50_000,
+          hasHoldings: false,
+          investmentValueMinor: null,
+          liabilityBalanceMinor: null,
+        },
+        {
+          accountId: "brokerage",
+          accountType: "taxable_brokerage",
+          availableAmountMinor: null,
+          balanceAsOf: "2026-07-17T00:00:00.000Z",
+          balanceMinor: 90_000,
+          hasHoldings: true,
+          investmentValueMinor: 100_000,
+          liabilityBalanceMinor: null,
+        },
+        {
+          accountId: "mortgage",
+          accountType: "mortgage",
+          availableAmountMinor: null,
+          balanceAsOf: "2026-07-01T00:00:00.000Z",
+          balanceMinor: -200_000,
+          hasHoldings: false,
+          investmentValueMinor: null,
+          liabilityBalanceMinor: 200_000,
+        },
+      ],
+      "2026-07-17T00:00:00.000Z",
+    );
+    expect(state).toMatchObject({
+      availableBalanceMinor: 8_000,
+      currentBalanceMinor: -50_000,
+      investmentValueMinor: 100_000,
+      liabilityBalanceMinor: 200_000,
+      netWorthMinor: -40_000,
+      spendableFundsMinor: 8_000,
+    });
+    expect(state.warnings).toEqual([
+      expect.objectContaining({ code: "stale_balance", entityId: "mortgage" }),
+    ]);
   });
 });
 

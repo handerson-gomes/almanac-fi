@@ -69,7 +69,7 @@ This is the dependency-ordered implementation backlog for Almanac FI. Each item 
 | 029  | [Budget calculations](./029-budget-calculations/requirements.md)                                                              | Complete    | 004, 017, 018, 025, 025a, 026      |
 | 030  | [Budget APIs and management](./030-budgets-api-and-management/requirements.md)                                                | Complete    | 006, 007, 008, 018, 029            |
 | 031  | [Budget dashboard and variance review](./031-budget-dashboard-and-variance-review/requirements.md)                            | Complete    | 010, 017, 029, 030                 |
-| 032  | [Authoritative financial state and available-funds snapshot](./032-authoritative-financial-state/requirements.md)              | Not started | 016a, 017, 024, 025, 026, 028a, 028b, 029, 030 |
+| 032  | [Authoritative financial state and available-funds snapshot](./032-authoritative-financial-state/requirements.md)              | Complete    | 016a, 017, 024, 025, 026, 028a, 028b, 029, 030 |
 | 033  | [Person-linked income sources and forecast schedules](./033-person-linked-income-forecast/requirements.md)                     | Not started | 004, 006, 007, 008, 027            |
 | 034  | [Monthly income forecast and actual-income reconciliation](./034-monthly-income-forecast-and-reconciliation/requirements.md)   | Not started | 017, 025, 026, 032, 033            |
 | 035  | [Funding buckets and allocation rules](./035-funding-buckets-and-allocation-rules/requirements.md)                             | Not started | 004, 006, 007, 008, 028, 028a, 028b, 030, 033 |

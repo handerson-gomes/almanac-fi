@@ -84,6 +84,137 @@ export function serializeMoney(
 
 export const corePackageName = "@almanac-fi/core" as const;
 
+export const financialStateCalculationVersion = "financial-state-v1" as const;
+export const spendableAccountTypes = [
+  "cash",
+  "checking",
+  "savings",
+  "money_market",
+] as const;
+export type FinancialStateWarning = Readonly<{
+  code: "missing_balance" | "missing_valuation" | "stale_balance";
+  entityId: string;
+  message: string;
+}>;
+export type FinancialStateAccountInput = Readonly<{
+  accountId: string;
+  accountType: string;
+  availableAmountMinor: number | null;
+  balanceAsOf: string | null;
+  balanceMinor: number | null;
+  hasHoldings: boolean;
+  investmentValueMinor: number | null;
+  liabilityBalanceMinor: number | null;
+}>;
+export type FinancialState = Readonly<{
+  accountIds: readonly string[];
+  activity: Readonly<{
+    confirmedTransferCount: number;
+    currentTransactionCount: number;
+    inflowMinor: number;
+    outflowMinor: number;
+  }>;
+  availableBalanceMinor: number;
+  calculationVersion: typeof financialStateCalculationVersion;
+  currentBalanceMinor: number;
+  investmentValueMinor: number;
+  liabilityBalanceMinor: number;
+  netWorthMinor: number;
+  spendableFundsMinor: number;
+  warnings: readonly FinancialStateWarning[];
+}>;
+
+/** Calculates current financial state without converting currency or introducing forecast values. */
+export function calculateFinancialState(
+  accounts: readonly FinancialStateAccountInput[],
+  asOf: string,
+  staleAfterDays = 7,
+  activity: FinancialState["activity"] = {
+    confirmedTransferCount: 0,
+    currentTransactionCount: 0,
+    inflowMinor: 0,
+    outflowMinor: 0,
+  },
+): FinancialState {
+  const asOfMs = Date.parse(asOf);
+  const staleAfterMs = staleAfterDays * 24 * 60 * 60 * 1_000;
+  const warnings: FinancialStateWarning[] = [];
+  let currentBalanceMinor = 0;
+  let availableBalanceMinor = 0;
+  let spendableFundsMinor = 0;
+  let investmentValueMinor = 0;
+  let liabilityBalanceMinor = 0;
+  let netWorthMinor = 0;
+  for (const account of accounts) {
+    if (account.balanceMinor === null) {
+      warnings.push({
+        code: "missing_balance",
+        entityId: account.accountId,
+        message:
+          "No dated balance is available on or before the snapshot date.",
+      });
+    } else {
+      currentBalanceMinor += account.balanceMinor;
+      if (
+        account.balanceAsOf !== null &&
+        Number.isFinite(asOfMs) &&
+        asOfMs - Date.parse(account.balanceAsOf) > staleAfterMs
+      ) {
+        warnings.push({
+          code: "stale_balance",
+          entityId: account.accountId,
+          message: `Balance is older than ${staleAfterDays} days.`,
+        });
+      }
+    }
+    if (account.availableAmountMinor !== null)
+      availableBalanceMinor += account.availableAmountMinor;
+    const spendable = spendableAccountTypes.includes(
+      account.accountType as (typeof spendableAccountTypes)[number],
+    );
+    if (spendable && account.balanceMinor !== null)
+      spendableFundsMinor +=
+        account.availableAmountMinor ?? account.balanceMinor;
+    if (account.hasHoldings) {
+      if (account.investmentValueMinor === null) {
+        warnings.push({
+          code: "missing_valuation",
+          entityId: account.accountId,
+          message: "Investment holdings have no complete current valuation.",
+        });
+      } else {
+        investmentValueMinor += account.investmentValueMinor;
+        netWorthMinor += account.investmentValueMinor;
+      }
+    } else if (
+      account.balanceMinor !== null &&
+      account.liabilityBalanceMinor === null
+    ) {
+      netWorthMinor += account.balanceMinor;
+    }
+    if (account.liabilityBalanceMinor !== null) {
+      liabilityBalanceMinor += account.liabilityBalanceMinor;
+      netWorthMinor -= account.liabilityBalanceMinor;
+    }
+  }
+  return {
+    accountIds: accounts.map((account) => account.accountId).sort(),
+    activity,
+    availableBalanceMinor,
+    calculationVersion: financialStateCalculationVersion,
+    currentBalanceMinor,
+    investmentValueMinor,
+    liabilityBalanceMinor,
+    netWorthMinor,
+    spendableFundsMinor,
+    warnings: warnings.sort(
+      (left, right) =>
+        left.entityId.localeCompare(right.entityId) ||
+        left.code.localeCompare(right.code),
+    ),
+  };
+}
+
 export type TransferTransaction = Readonly<{
   accountId: string;
   amountMinor: number;

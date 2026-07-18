@@ -27,9 +27,11 @@ import {
   householdSchema,
   financialGoalListSchema,
   financialGoalSchema,
+  financialStateSchema,
   scenarioAssumptionListSchema,
   scenarioAssumptionSchema,
   type FinancialGoal,
+  type FinancialState,
   type ScenarioAssumption,
   personListSchema,
   personSchema,
@@ -89,6 +91,7 @@ export type {
   HouseholdFact,
   Person,
   FinancialGoal,
+  FinancialState,
   ScenarioAssumption,
 };
 
@@ -104,6 +107,14 @@ export async function getHealth(): Promise<"ok"> {
   }
 
   return healthResponseSchema.parse(await response.json()).status;
+}
+
+export async function getFinancialState(
+  currency = "USD",
+): Promise<FinancialState> {
+  return financialStateSchema.parse(
+    await requestJson(`/api/financial-state?currency=${currency}`),
+  );
 }
 
 async function requestJson(path: string, init?: RequestInit): Promise<unknown> {

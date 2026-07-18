@@ -446,3 +446,60 @@ test("records and corrects manual actuals with retained provenance", async () =>
   database.close();
   await rm(dataHome, { force: true, recursive: true });
 });
+
+test("reports a currency-scoped current state without treating CDs as spendable", async () => {
+  const dataHome = await mkdtemp(join(tmpdir(), "almanac-fi-server-"));
+  const app = await createServer({
+    config: { dataHome, host: "127.0.0.1", logLevel: "error", port: 0 },
+  });
+  const institution = (
+    await app.inject({
+      method: "POST",
+      payload: { name: "Snapshot Bank" },
+      url: "/institutions",
+    })
+  ).json();
+  const createAccount = async (name: string, accountType: string) =>
+    (
+      await app.inject({
+        method: "POST",
+        payload: {
+          accountType,
+          currency: "USD",
+          institutionId: institution.id,
+          name,
+        },
+        url: "/accounts",
+      })
+    ).json();
+  const checking = await createAccount("Checking", "checking");
+  const certificate = await createAccount("CD", "certificate_of_deposit");
+  for (const [account, amountMinor, availableAmountMinor] of [
+    [checking, 10_000, 8_000],
+    [certificate, 50_000, null],
+  ] as const) {
+    await app.inject({
+      method: "POST",
+      payload: {
+        amountMinor,
+        asOf: "2026-07-17T00:00:00.000Z",
+        availableAmountMinor,
+      },
+      url: `/accounts/${account.id}/balances`,
+    });
+  }
+  const response = await app.inject({
+    method: "GET",
+    url: "/financial-state?asOf=2026-07-17T00:00:00.000Z&currency=USD",
+  });
+  expect(response.statusCode).toBe(200);
+  expect(response.json()).toMatchObject({
+    availableBalanceMinor: 8_000,
+    calculationVersion: "financial-state-v1",
+    currentBalanceMinor: 60_000,
+    currency: "USD",
+    spendableFundsMinor: 8_000,
+  });
+  await app.close();
+  await rm(dataHome, { force: true, recursive: true });
+});
