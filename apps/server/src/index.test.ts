@@ -601,3 +601,75 @@ test("manages person-linked income schedules and their monthly forecast", async 
   await app.close();
   await rm(dataHome, { force: true, recursive: true });
 });
+
+test("manages typed funding buckets and residual allocation rules", async () => {
+  const dataHome = await mkdtemp(join(tmpdir(), "almanac-fi-server-"));
+  const app = await createServer({
+    config: { dataHome, host: "127.0.0.1", logLevel: "error", port: 0 },
+  });
+  const household = (
+    await app.inject({
+      method: "POST",
+      payload: { currency: "USD", name: "Funding API" },
+      url: "/households",
+    })
+  ).json();
+  const bucketResponse = await app.inject({
+    method: "POST",
+    payload: {
+      currency: "USD",
+      destinationType: "unallocated_buffer",
+      name: "Unallocated",
+    },
+    url: `/households/${household.id}/funding-buckets`,
+  });
+  expect(bucketResponse.statusCode).toBe(201);
+  const bucket = bucketResponse.json();
+  const ruleResponse = await app.inject({
+    method: "POST",
+    payload: {
+      amountType: "percentage",
+      cadence: "monthly",
+      constraintLevel: "residual",
+      currencyPolicy: "household_currency",
+      effectiveFrom: "2026-01-01",
+      percentageBasis: "remaining_cash",
+      percentageBps: 10_000,
+      priority: 99,
+    },
+    url: `/funding-buckets/${bucket.id}/rules`,
+  });
+  expect(ruleResponse.statusCode).toBe(201);
+  expect(ruleResponse.json()).toMatchObject({
+    constraintLevel: "residual",
+    percentageBasis: "remaining_cash",
+  });
+  expect(
+    (
+      await app.inject({
+        method: "GET",
+        url: `/households/${household.id}/funding-buckets`,
+      })
+    ).json(),
+  ).toMatchObject({ items: [expect.objectContaining({ id: bucket.id })] });
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        payload: {
+          amountType: "percentage",
+          cadence: "monthly",
+          constraintLevel: "hard",
+          currencyPolicy: "household_currency",
+          effectiveFrom: "2027-01-01",
+          percentageBasis: "expected_net_income",
+          percentageBps: 1_000,
+          priority: 1,
+        },
+        url: `/funding-buckets/${bucket.id}/rules`,
+      })
+    ).statusCode,
+  ).toBe(400);
+  await app.close();
+  await rm(dataHome, { force: true, recursive: true });
+});

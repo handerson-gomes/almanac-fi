@@ -429,6 +429,67 @@ export const incomeReconciliationMatches = sqliteTable(
   },
 );
 
+export const fundingBuckets = sqliteTable("funding_buckets", {
+  budgetId: text("budget_id"),
+  categoryId: text("category_id"),
+  createdAt: text("created_at").notNull(),
+  currency: text("currency").notNull(),
+  currencyPolicy: text("currency_policy", {
+    enum: ["household_currency", "destination_currency"],
+  }).notNull(),
+  destinationAccountId: text("destination_account_id"),
+  destinationType: text("destination_type", {
+    enum: [
+      "budget",
+      "goal",
+      "reserve",
+      "investment_contribution",
+      "unallocated_buffer",
+    ],
+  }).notNull(),
+  goalId: text("goal_id"),
+  householdId: text("household_id").notNull(),
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  reserveName: text("reserve_name"),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const fundingAllocationRules = sqliteTable("funding_allocation_rules", {
+  amountType: text("amount_type", { enum: ["fixed", "percentage"] }).notNull(),
+  bucketId: text("bucket_id").notNull(),
+  cadence: text("cadence", {
+    enum: [
+      "weekly",
+      "biweekly",
+      "semimonthly",
+      "monthly",
+      "quarterly",
+      "annual",
+    ],
+  }).notNull(),
+  constraintLevel: text("constraint_level", {
+    enum: ["hard", "minimum", "preferred", "flexible", "residual"],
+  }).notNull(),
+  createdAt: text("created_at").notNull(),
+  currencyPolicy: text("currency_policy", {
+    enum: ["household_currency", "destination_currency"],
+  }).notNull(),
+  effectiveFrom: text("effective_from").notNull(),
+  effectiveTo: text("effective_to"),
+  fixedAmountMinor: integer("fixed_amount_minor"),
+  id: text("id").primaryKey(),
+  maximumAmountMinor: integer("maximum_amount_minor"),
+  minimumAmountMinor: integer("minimum_amount_minor"),
+  percentageBasis: text("percentage_basis", {
+    enum: ["gross_income", "expected_net_income", "remaining_cash"],
+  }),
+  percentageBps: integer("percentage_bps"),
+  priority: integer("priority").notNull(),
+  sourceAccountId: text("source_account_id"),
+  updatedAt: text("updated_at").notNull(),
+});
+
 export const csvMappings = sqliteTable("csv_mappings", {
   createdAt: text("created_at").notNull(),
   id: text("id").primaryKey(),

@@ -1288,6 +1288,269 @@ describe("SQLite foundation", () => {
     database.close();
   });
 
+  test("validates typed funding buckets and effective-dated allocation rules", () => {
+    const database = createDatabase();
+    database.migrate();
+    const unitOfWork = createUnitOfWork(database);
+    const household = unitOfWork.households.create({
+      currency: "USD",
+      name: "Funding household",
+    });
+    const parentCategory = unitOfWork.categories.create({
+      name: "Home",
+      parentId: null,
+      status: "active",
+    });
+    const childCategory = unitOfWork.categories.create({
+      name: "Repairs",
+      parentId: parentCategory.id,
+      status: "active",
+    });
+    const budget = unitOfWork.budgets.create({
+      currency: "USD",
+      householdId: household.id,
+      name: "Household budget",
+      status: "active",
+    });
+    const goal = unitOfWork.goals.create({
+      accountId: null,
+      constraintLevel: "soft",
+      currency: "USD",
+      dependentId: null,
+      fundingStrategy: "cash",
+      householdId: household.id,
+      name: "Emergency fund",
+      priorityTier: "essential",
+      status: "active",
+      targetAmountMinor: 1_000_000,
+      targetDate: "2028-01-01",
+    });
+    const institution = createTestInstitution(unitOfWork, "Funding Bank");
+    const checking = unitOfWork.accounts.create({
+      accountType: "checking",
+      currency: "USD",
+      externalConnectionId: null,
+      externalId: null,
+      institutionId: institution.id,
+      name: "Checking",
+      status: "active",
+    });
+    const brokerage = unitOfWork.accounts.create({
+      accountType: "taxable_brokerage",
+      currency: "USD",
+      externalConnectionId: null,
+      externalId: null,
+      institutionId: institution.id,
+      name: "Brokerage",
+      status: "active",
+    });
+    const budgetBucket = unitOfWork.funding.createBucket({
+      budgetId: budget.id,
+      categoryId: childCategory.id,
+      currency: "USD",
+      currencyPolicy: "household_currency",
+      destinationAccountId: null,
+      destinationType: "budget",
+      goalId: null,
+      householdId: household.id,
+      name: "Home repairs",
+      reserveName: null,
+    });
+    const goalBucket = unitOfWork.funding.createBucket({
+      budgetId: null,
+      categoryId: null,
+      currency: "USD",
+      currencyPolicy: "household_currency",
+      destinationAccountId: null,
+      destinationType: "goal",
+      goalId: goal.id,
+      householdId: household.id,
+      name: "Emergency fund",
+      reserveName: null,
+    });
+    const reserveBucket = unitOfWork.funding.createBucket({
+      budgetId: null,
+      categoryId: null,
+      currency: "USD",
+      currencyPolicy: "household_currency",
+      destinationAccountId: null,
+      destinationType: "reserve",
+      goalId: null,
+      householdId: household.id,
+      name: "Tax reserve",
+      reserveName: "Taxes",
+    });
+    const investmentBucket = unitOfWork.funding.createBucket({
+      budgetId: null,
+      categoryId: null,
+      currency: "USD",
+      currencyPolicy: "destination_currency",
+      destinationAccountId: brokerage.id,
+      destinationType: "investment_contribution",
+      goalId: null,
+      householdId: household.id,
+      name: "Brokerage contributions",
+      reserveName: null,
+    });
+    const bufferBucket = unitOfWork.funding.createBucket({
+      budgetId: null,
+      categoryId: null,
+      currency: "USD",
+      currencyPolicy: "household_currency",
+      destinationAccountId: null,
+      destinationType: "unallocated_buffer",
+      goalId: null,
+      householdId: household.id,
+      name: "Unallocated buffer",
+      reserveName: null,
+    });
+    unitOfWork.funding.createRule({
+      amountType: "fixed",
+      bucketId: budgetBucket.id,
+      cadence: "monthly",
+      constraintLevel: "hard",
+      currencyPolicy: "household_currency",
+      effectiveFrom: "2026-01-01",
+      effectiveTo: null,
+      fixedAmountMinor: 25_000,
+      maximumAmountMinor: null,
+      minimumAmountMinor: null,
+      percentageBasis: null,
+      percentageBps: null,
+      priority: 1,
+      sourceAccountId: checking.id,
+    });
+    const originalGoalRule = unitOfWork.funding.createRule({
+      amountType: "percentage",
+      bucketId: goalBucket.id,
+      cadence: "monthly",
+      constraintLevel: "preferred",
+      currencyPolicy: "household_currency",
+      effectiveFrom: "2026-01-01",
+      effectiveTo: "2027-01-01",
+      fixedAmountMinor: null,
+      maximumAmountMinor: 50_000,
+      minimumAmountMinor: 10_000,
+      percentageBasis: "gross_income",
+      percentageBps: 1_000,
+      priority: 2,
+      sourceAccountId: checking.id,
+    });
+    unitOfWork.funding.createRule({
+      ...originalGoalRule,
+      effectiveFrom: "2027-01-01",
+      effectiveTo: null,
+      percentageBps: 1_500,
+    });
+    unitOfWork.funding.createRule({
+      amountType: "percentage",
+      bucketId: reserveBucket.id,
+      cadence: "monthly",
+      constraintLevel: "minimum",
+      currencyPolicy: "household_currency",
+      effectiveFrom: "2026-01-01",
+      effectiveTo: null,
+      fixedAmountMinor: null,
+      maximumAmountMinor: null,
+      minimumAmountMinor: 5_000,
+      percentageBasis: "expected_net_income",
+      percentageBps: 500,
+      priority: 3,
+      sourceAccountId: checking.id,
+    });
+    unitOfWork.funding.createRule({
+      amountType: "percentage",
+      bucketId: investmentBucket.id,
+      cadence: "monthly",
+      constraintLevel: "flexible",
+      currencyPolicy: "destination_currency",
+      effectiveFrom: "2026-01-01",
+      effectiveTo: null,
+      fixedAmountMinor: null,
+      maximumAmountMinor: null,
+      minimumAmountMinor: null,
+      percentageBasis: "remaining_cash",
+      percentageBps: 2_000,
+      priority: 4,
+      sourceAccountId: checking.id,
+    });
+    const residual = unitOfWork.funding.createRule({
+      amountType: "percentage",
+      bucketId: bufferBucket.id,
+      cadence: "monthly",
+      constraintLevel: "residual",
+      currencyPolicy: "household_currency",
+      effectiveFrom: "2026-01-01",
+      effectiveTo: null,
+      fixedAmountMinor: null,
+      maximumAmountMinor: null,
+      minimumAmountMinor: null,
+      percentageBasis: "remaining_cash",
+      percentageBps: 10_000,
+      priority: 99,
+      sourceAccountId: checking.id,
+    });
+    expect(unitOfWork.funding.listBuckets(household.id)).toHaveLength(5);
+    expect(unitOfWork.funding.listRules(goalBucket.id, "2026-06-01")).toEqual([
+      expect.objectContaining({
+        id: originalGoalRule.id,
+        percentageBps: 1_000,
+      }),
+    ]);
+    expect(unitOfWork.funding.listRules(goalBucket.id, "2027-06-01")).toEqual([
+      expect.objectContaining({ percentageBps: 1_500 }),
+    ]);
+    expect(residual.constraintLevel).toBe("residual");
+    const secondBuffer = unitOfWork.funding.createBucket({
+      budgetId: null,
+      categoryId: null,
+      currency: "USD",
+      currencyPolicy: "household_currency",
+      destinationAccountId: null,
+      destinationType: "unallocated_buffer",
+      goalId: null,
+      householdId: household.id,
+      name: "Second unallocated buffer",
+      reserveName: null,
+    });
+    expect(() =>
+      unitOfWork.funding.createRule({
+        ...residual,
+        bucketId: secondBuffer.id,
+      }),
+    ).toThrow(/Only one residual/);
+    expect(() =>
+      unitOfWork.funding.createRule({
+        ...residual,
+        amountType: "fixed",
+        fixedAmountMinor: 1,
+        percentageBasis: null,
+        percentageBps: null,
+      }),
+    ).toThrow(/Residual/);
+    expect(() =>
+      unitOfWork.funding.createRule({
+        ...originalGoalRule,
+        effectiveFrom: "2026-06-01",
+        effectiveTo: null,
+      }),
+    ).toThrow(/cannot overlap/);
+    expect(() =>
+      unitOfWork.funding.createRule({
+        ...originalGoalRule,
+        effectiveFrom: "2028-01-01",
+        effectiveTo: "2027-01-01",
+      }),
+    ).toThrow(/effective end/);
+    expect(() =>
+      unitOfWork.funding.createBucket({
+        ...bufferBucket,
+        currency: "EUR",
+      }),
+    ).toThrow(/Household-currency/);
+    database.close();
+  });
+
   test("manages and deterministically clones audited budget targets", () => {
     const database = createDatabase();
     database.migrate();

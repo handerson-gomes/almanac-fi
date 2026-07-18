@@ -472,6 +472,45 @@ const migrations = [
       DROP INDEX IF EXISTS income_forecast_runs_household; DROP TABLE IF EXISTS income_reconciliation_match_deposits;
       DROP TABLE IF EXISTS income_reconciliation_matches; DROP TABLE IF EXISTS income_forecast_rows; DROP TABLE IF EXISTS income_forecast_runs;`,
   },
+  {
+    id: "0015_funding_buckets_and_allocation_rules",
+    up: `
+      CREATE TABLE IF NOT EXISTS funding_buckets (
+        id TEXT PRIMARY KEY, household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+        name TEXT NOT NULL, destination_type TEXT NOT NULL CHECK(destination_type IN ('budget', 'goal', 'reserve', 'investment_contribution', 'unallocated_buffer')),
+        currency TEXT NOT NULL CHECK(currency GLOB '[A-Z][A-Z][A-Z]'),
+        currency_policy TEXT NOT NULL CHECK(currency_policy IN ('household_currency', 'destination_currency')),
+        budget_id TEXT REFERENCES budgets(id), category_id TEXT REFERENCES categories(id), goal_id TEXT REFERENCES financial_goals(id),
+        reserve_name TEXT, destination_account_id TEXT REFERENCES accounts(id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        CHECK((destination_type = 'budget' AND budget_id IS NOT NULL AND goal_id IS NULL AND reserve_name IS NULL AND destination_account_id IS NULL) OR
+              (destination_type = 'goal' AND budget_id IS NULL AND goal_id IS NOT NULL AND reserve_name IS NULL AND destination_account_id IS NULL) OR
+              (destination_type = 'reserve' AND budget_id IS NULL AND goal_id IS NULL AND reserve_name IS NOT NULL AND destination_account_id IS NULL) OR
+              (destination_type = 'investment_contribution' AND budget_id IS NULL AND goal_id IS NULL AND reserve_name IS NULL AND destination_account_id IS NOT NULL) OR
+              (destination_type = 'unallocated_buffer' AND budget_id IS NULL AND goal_id IS NULL AND reserve_name IS NULL AND destination_account_id IS NULL))
+      );
+      CREATE TABLE IF NOT EXISTS funding_allocation_rules (
+        id TEXT PRIMARY KEY, bucket_id TEXT NOT NULL REFERENCES funding_buckets(id) ON DELETE CASCADE,
+        amount_type TEXT NOT NULL CHECK(amount_type IN ('fixed', 'percentage')),
+        fixed_amount_minor INTEGER, percentage_bps INTEGER, percentage_basis TEXT CHECK(percentage_basis IN ('gross_income', 'expected_net_income', 'remaining_cash')),
+        cadence TEXT NOT NULL CHECK(cadence IN ('weekly', 'biweekly', 'semimonthly', 'monthly', 'quarterly', 'annual')),
+        effective_from TEXT NOT NULL, effective_to TEXT, priority INTEGER NOT NULL CHECK(priority >= 0),
+        constraint_level TEXT NOT NULL CHECK(constraint_level IN ('hard', 'minimum', 'preferred', 'flexible', 'residual')),
+        minimum_amount_minor INTEGER, maximum_amount_minor INTEGER, currency_policy TEXT NOT NULL CHECK(currency_policy IN ('household_currency', 'destination_currency')),
+        source_account_id TEXT REFERENCES accounts(id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        CHECK(effective_to IS NULL OR effective_to > effective_from),
+        CHECK(fixed_amount_minor IS NULL OR fixed_amount_minor >= 0),
+        CHECK(percentage_bps IS NULL OR percentage_bps BETWEEN 1 AND 10000),
+        CHECK(minimum_amount_minor IS NULL OR minimum_amount_minor >= 0), CHECK(maximum_amount_minor IS NULL OR maximum_amount_minor >= 0),
+        CHECK(minimum_amount_minor IS NULL OR maximum_amount_minor IS NULL OR minimum_amount_minor <= maximum_amount_minor),
+        CHECK((amount_type = 'fixed' AND fixed_amount_minor IS NOT NULL AND percentage_bps IS NULL AND percentage_basis IS NULL) OR
+              (amount_type = 'percentage' AND fixed_amount_minor IS NULL AND percentage_bps IS NOT NULL AND percentage_basis IS NOT NULL))
+      );
+      CREATE INDEX IF NOT EXISTS funding_buckets_household ON funding_buckets(household_id, destination_type, name);
+      CREATE INDEX IF NOT EXISTS funding_allocation_rules_resolution ON funding_allocation_rules(bucket_id, effective_from, effective_to);
+    `,
+    down: `DROP INDEX IF EXISTS funding_allocation_rules_resolution; DROP INDEX IF EXISTS funding_buckets_household;
+      DROP TABLE IF EXISTS funding_allocation_rules; DROP TABLE IF EXISTS funding_buckets;`,
+  },
 ] as const;
 
 export type AppDatabase = Readonly<{

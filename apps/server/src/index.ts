@@ -44,6 +44,8 @@ import {
   createFinancialGoalSchema,
   createHoldingSchema,
   createIncomeForecastRunSchema,
+  createFundingAllocationRuleSchema,
+  createFundingBucketSchema,
   createIncomeScheduleSchema,
   createIncomeSourceSchema,
   createInvestmentTransactionSchema,
@@ -92,6 +94,10 @@ import {
   incomeSourceListSchema,
   incomeSourceSchema,
   confirmIncomeReconciliationMatchSchema,
+  fundingAllocationRuleListSchema,
+  fundingAllocationRuleSchema,
+  fundingBucketListSchema,
+  fundingBucketSchema,
   investmentTransactionListSchema,
   investmentTransactionSchema,
   investmentValuationSchema,
@@ -1470,6 +1476,63 @@ export async function createServer(
     if (match === undefined)
       notFound("Income reconciliation match was not found.");
     return incomeReconciliationMatchSchema.parse(match);
+  });
+  app.get("/households/:id/funding-buckets", async (request) => {
+    const householdId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    return fundingBucketListSchema.parse({
+      items: unitOfWork.funding.listBuckets(householdId),
+    });
+  });
+  app.post("/households/:id/funding-buckets", async (request, reply) => {
+    const householdId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    try {
+      return reply.status(201).send(
+        fundingBucketSchema.parse(
+          unitOfWork.funding.createBucket({
+            ...parseRequest(createFundingBucketSchema, request.body),
+            householdId,
+          }),
+        ),
+      );
+    } catch (error) {
+      if (error instanceof Error) badRequest(error.message);
+      throw error;
+    }
+  });
+  app.get("/funding-buckets/:id/rules", async (request) => {
+    const bucketId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const { asOf } = parseRequest(householdAsOfQuerySchema, request.query);
+    return fundingAllocationRuleListSchema.parse({
+      items: unitOfWork.funding.listRules(bucketId, asOf),
+    });
+  });
+  app.post("/funding-buckets/:id/rules", async (request, reply) => {
+    const bucketId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    try {
+      return reply.status(201).send(
+        fundingAllocationRuleSchema.parse(
+          unitOfWork.funding.createRule({
+            ...parseRequest(createFundingAllocationRuleSchema, request.body),
+            bucketId,
+          }),
+        ),
+      );
+    } catch (error) {
+      if (error instanceof Error) badRequest(error.message);
+      throw error;
+    }
   });
   app.post("/liabilities/:id/scenario-overrides", async (request, reply) => {
     const liabilityId = parseRequest(

@@ -37,6 +37,10 @@
       "types": "./dist/income-reconciliation.d.ts",
       "import": "./dist/income-reconciliation.js"
     },
+    "./funding": {
+      "types": "./dist/funding.d.ts",
+      "import": "./dist/funding.js"
+    },
     "./budgets": {
       "types": "./dist/budgets.d.ts",
       "import": "./dist/budgets.js"

@@ -72,7 +72,7 @@ This is the dependency-ordered implementation backlog for Almanac FI. Each item 
 | 032  | [Authoritative financial state and available-funds snapshot](./032-authoritative-financial-state/requirements.md)              | Complete    | 016a, 017, 024, 025, 026, 028a, 028b, 029, 030 |
 | 033  | [Person-linked income sources and forecast schedules](./033-person-linked-income-forecast/requirements.md)                     | Completed   | 004, 006, 007, 008, 027            |
 | 034  | [Monthly income forecast and actual-income reconciliation](./034-monthly-income-forecast-and-reconciliation/requirements.md)   | Completed   | 017, 025, 026, 032, 033            |
-| 035  | [Funding buckets and allocation rules](./035-funding-buckets-and-allocation-rules/requirements.md)                             | Not started | 004, 006, 007, 008, 028, 028a, 028b, 030, 033 |
+| 035  | [Funding buckets and allocation rules](./035-funding-buckets-and-allocation-rules/requirements.md)                             | Completed   | 004, 006, 007, 008, 028, 028a, 028b, 030, 033 |
 | 036  | [Shared allocation ledger and constraint engine](./036-allocation-ledger-and-constraint-engine/requirements.md)                | Not started | 005, 006, 007, 032, 034, 035       |
 | 037  | [Active plan versioning and hypothetical scenarios](./037-plan-versioning-and-scenarios/requirements.md)                       | Not started | 006, 007, 008, 034, 035, 036       |
 | 038  | [Core planning dashboard and planned-versus-actual reconciliation](./038-core-planning-dashboard-and-reconciliation/requirements.md) | Not started | 010, 031, 032, 034, 036, 037       |

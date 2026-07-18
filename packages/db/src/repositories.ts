@@ -41,6 +41,7 @@ import {
   createIncomeReconciliationRepository,
   type IncomeReconciliationRepository,
 } from "./income-reconciliation.js";
+import { createFundingRepository, type FundingRepository } from "./funding.js";
 
 export type Page<T> = Readonly<{ items: readonly T[]; nextCursor?: string }>;
 export type PageRequest = Readonly<{
@@ -441,6 +442,7 @@ export interface UnitOfWork {
   readonly accountImportReviews: AccountImportReviewRepository;
   readonly externalInstitutionConnections: ExternalInstitutionConnectionRepository;
   readonly financialState: FinancialStateRepository;
+  readonly funding: FundingRepository;
   readonly importBatches: ImportBatchRepository;
   readonly institutions: InstitutionRepository;
   readonly incomeClassifications: IncomeClassificationRepository;
@@ -1561,6 +1563,9 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
       auditEvents.append({ ...input, sourceRecordId: null });
     },
   );
+  const funding = createFundingRepository(database, (input) => {
+    auditEvents.append({ ...input, sourceRecordId: null });
+  });
   const budgets = createBudgetRepository(database, (input) => {
     auditEvents.append({ ...input, sourceRecordId: null });
   });
@@ -1576,6 +1581,7 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
     externalInstitutionConnections:
       institutionServices.externalInstitutionConnections,
     financialState,
+    funding,
     importBatches,
     institutions: institutionServices.institutions,
     income,

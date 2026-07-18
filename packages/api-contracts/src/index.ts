@@ -1204,6 +1204,192 @@ export const createRecurringObligationSchema = recurringObligationSchema
 export const recurringObligationListSchema = z.object({
   items: z.array(recurringObligationSchema),
 });
+export const fundingDestinationTypeSchema = z.enum([
+  "budget",
+  "goal",
+  "reserve",
+  "investment_contribution",
+  "unallocated_buffer",
+]);
+export const fundingCurrencyPolicySchema = z.enum([
+  "household_currency",
+  "destination_currency",
+]);
+export const allocationAmountTypeSchema = z.enum(["fixed", "percentage"]);
+export const allocationPercentageBasisSchema = z.enum([
+  "gross_income",
+  "expected_net_income",
+  "remaining_cash",
+]);
+export const allocationCadenceSchema = z.enum([
+  "weekly",
+  "biweekly",
+  "semimonthly",
+  "monthly",
+  "quarterly",
+  "annual",
+]);
+export const allocationConstraintLevelSchema = z.enum([
+  "hard",
+  "minimum",
+  "preferred",
+  "flexible",
+  "residual",
+]);
+export const fundingBucketSchema = z.object({
+  budgetId: entityIdSchema.nullable(),
+  categoryId: entityIdSchema.nullable(),
+  createdAt: z.iso.datetime(),
+  currency: currencySchema,
+  currencyPolicy: fundingCurrencyPolicySchema,
+  destinationAccountId: entityIdSchema.nullable(),
+  destinationType: fundingDestinationTypeSchema,
+  goalId: entityIdSchema.nullable(),
+  householdId: entityIdSchema,
+  id: entityIdSchema,
+  name: z.string().trim().min(1).max(200),
+  reserveName: z.string().trim().min(1).max(200).nullable(),
+  updatedAt: z.iso.datetime(),
+});
+export const createFundingBucketSchema = fundingBucketSchema
+  .pick({
+    budgetId: true,
+    categoryId: true,
+    currency: true,
+    currencyPolicy: true,
+    destinationAccountId: true,
+    destinationType: true,
+    goalId: true,
+    name: true,
+    reserveName: true,
+  })
+  .partial({
+    budgetId: true,
+    categoryId: true,
+    destinationAccountId: true,
+    goalId: true,
+    reserveName: true,
+  })
+  .extend({
+    budgetId: entityIdSchema.nullable().default(null),
+    categoryId: entityIdSchema.nullable().default(null),
+    currencyPolicy: fundingCurrencyPolicySchema.default("household_currency"),
+    destinationAccountId: entityIdSchema.nullable().default(null),
+    goalId: entityIdSchema.nullable().default(null),
+    reserveName: z.string().trim().min(1).max(200).nullable().default(null),
+  });
+export const fundingBucketListSchema = z.object({
+  items: z.array(fundingBucketSchema),
+});
+export const fundingAllocationRuleSchema = z.object({
+  amountType: allocationAmountTypeSchema,
+  bucketId: entityIdSchema,
+  cadence: allocationCadenceSchema,
+  constraintLevel: allocationConstraintLevelSchema,
+  createdAt: z.iso.datetime(),
+  currencyPolicy: fundingCurrencyPolicySchema,
+  effectiveFrom: z.iso.date(),
+  effectiveTo: z.iso.date().nullable(),
+  fixedAmountMinor: z.number().int().nonnegative().nullable(),
+  id: entityIdSchema,
+  maximumAmountMinor: z.number().int().nonnegative().nullable(),
+  minimumAmountMinor: z.number().int().nonnegative().nullable(),
+  percentageBasis: allocationPercentageBasisSchema.nullable(),
+  percentageBps: z.number().int().min(1).max(10_000).nullable(),
+  priority: z.number().int().min(0).max(10_000),
+  sourceAccountId: entityIdSchema.nullable(),
+  updatedAt: z.iso.datetime(),
+});
+const fundingAllocationRuleInputSchema = fundingAllocationRuleSchema
+  .omit({ bucketId: true, createdAt: true, id: true, updatedAt: true })
+  .partial({
+    effectiveTo: true,
+    fixedAmountMinor: true,
+    maximumAmountMinor: true,
+    minimumAmountMinor: true,
+    percentageBasis: true,
+    percentageBps: true,
+    sourceAccountId: true,
+  })
+  .extend({
+    effectiveTo: z.iso.date().nullable().default(null),
+    fixedAmountMinor: z.number().int().nonnegative().nullable().default(null),
+    maximumAmountMinor: z.number().int().nonnegative().nullable().default(null),
+    minimumAmountMinor: z.number().int().nonnegative().nullable().default(null),
+    percentageBasis: allocationPercentageBasisSchema.nullable().default(null),
+    percentageBps: z.number().int().min(1).max(10_000).nullable().default(null),
+    sourceAccountId: entityIdSchema.nullable().default(null),
+  });
+export const createFundingAllocationRuleSchema =
+  fundingAllocationRuleInputSchema.superRefine((value, context) => {
+    if (
+      value.effectiveTo !== null &&
+      value.effectiveTo <= value.effectiveFrom
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Effective end must be after the start date.",
+      });
+    }
+    if (
+      value.amountType === "fixed" &&
+      (value.fixedAmountMinor === null ||
+        value.percentageBps !== null ||
+        value.percentageBasis !== null)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Fixed rules require only a fixed amount.",
+      });
+    }
+    if (
+      value.amountType === "percentage" &&
+      (value.fixedAmountMinor !== null ||
+        value.percentageBps === null ||
+        value.percentageBasis === null)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Percentage rules require a percentage and declared basis.",
+      });
+    }
+    if (
+      value.minimumAmountMinor !== null &&
+      value.maximumAmountMinor !== null &&
+      value.minimumAmountMinor > value.maximumAmountMinor
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Minimum amount cannot exceed maximum amount.",
+      });
+    }
+    if (
+      value.constraintLevel === "residual" &&
+      (value.amountType !== "percentage" ||
+        value.percentageBasis !== "remaining_cash" ||
+        value.percentageBps !== 10_000 ||
+        value.minimumAmountMinor !== null ||
+        value.maximumAmountMinor !== null)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Residual rules must allocate 100% of remaining cash without bounds.",
+      });
+    }
+    if (
+      value.constraintLevel === "hard" &&
+      (value.amountType !== "fixed" || value.maximumAmountMinor !== null)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Hard rules must be unbounded fixed obligations.",
+      });
+    }
+  });
+export const fundingAllocationRuleListSchema = z.object({
+  items: z.array(fundingAllocationRuleSchema),
+});
 export const forecastObligationListSchema = z.object({
   items: z.array(
     z.object({
@@ -1482,6 +1668,28 @@ export const openApiDocument = Object.freeze({
       post: {
         operationId: "confirmIncomeReconciliationMatch",
         responses: { "200": { description: "User-confirmed income match" } },
+      },
+    },
+    "/households/{id}/funding-buckets": {
+      get: {
+        operationId: "listFundingBuckets",
+        responses: { "200": { description: "Typed funding destinations" } },
+      },
+      post: {
+        operationId: "createFundingBucket",
+        responses: { "201": { description: "Funding destination created" } },
+      },
+    },
+    "/funding-buckets/{id}/rules": {
+      get: {
+        operationId: "listFundingAllocationRules",
+        responses: {
+          "200": { description: "Effective-dated allocation rules" },
+        },
+      },
+      post: {
+        operationId: "createFundingAllocationRule",
+        responses: { "201": { description: "Allocation rule created" } },
       },
     },
     "/institutions": {

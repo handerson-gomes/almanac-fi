@@ -24,4 +24,4 @@ Run rule-validation fixtures for fixed amounts, each percentage basis, nested bu
 
 ## Status
 
-Not started
+Completed
