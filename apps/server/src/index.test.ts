@@ -503,3 +503,101 @@ test("reports a currency-scoped current state without treating CDs as spendable"
   await app.close();
   await rm(dataHome, { force: true, recursive: true });
 });
+
+test("manages person-linked income schedules and their monthly forecast", async () => {
+  const dataHome = await mkdtemp(join(tmpdir(), "almanac-fi-server-"));
+  const app = await createServer({
+    config: { dataHome, host: "127.0.0.1", logLevel: "error", port: 0 },
+  });
+  const household = (
+    await app.inject({
+      method: "POST",
+      payload: { currency: "USD", name: "Income API" },
+      url: "/households",
+    })
+  ).json();
+  const person = (
+    await app.inject({
+      method: "POST",
+      payload: { name: "Avery", relationship: "self" },
+      url: `/households/${household.id}/people`,
+    })
+  ).json();
+  const sourceResponse = await app.inject({
+    method: "POST",
+    payload: { kind: "w2", name: "Example Co.", personId: person.id },
+    url: `/households/${household.id}/income-sources`,
+  });
+  expect(sourceResponse.statusCode).toBe(201);
+  const source = sourceResponse.json();
+  const scheduleResponse = await app.inject({
+    method: "POST",
+    payload: {
+      behavior: "fixed",
+      cadence: "monthly",
+      confidence: 1,
+      currency: "USD",
+      effectiveFrom: "2026-07-01",
+      expectedNetAmountMinor: 80_000,
+      grossAmountMinor: 100_000,
+      source: "paystub",
+    },
+    url: `/income-sources/${source.id}/schedules`,
+  });
+  expect(scheduleResponse.statusCode).toBe(201);
+  const forecast = await app.inject({
+    method: "GET",
+    url: `/households/${household.id}/income-forecast?startMonth=2026-07-01&months=12`,
+  });
+  expect(forecast.statusCode).toBe(200);
+  expect(forecast.json()).toMatchObject({
+    annual: expect.arrayContaining([
+      expect.objectContaining({
+        expectedNetAmountMinor: 480_000,
+        year: 2026,
+      }),
+      expect.objectContaining({
+        expectedNetAmountMinor: 480_000,
+        year: 2027,
+      }),
+    ]),
+    monthly: expect.arrayContaining([
+      expect.objectContaining({
+        expectedNetAmountMinor: 80_000,
+        month: "2026-07-01",
+      }),
+    ]),
+  });
+  const runResponse = await app.inject({
+    method: "POST",
+    payload: {
+      dataAsOf: "2026-12-31",
+      months: 12,
+      startMonth: "2026-07-01",
+    },
+    url: `/households/${household.id}/income-forecast-runs`,
+  });
+  expect(runResponse.statusCode).toBe(201);
+  const run = runResponse.json();
+  expect(run).toMatchObject({
+    matches: expect.arrayContaining([
+      expect.objectContaining({
+        matchMethod: "unmatched_expected",
+        reviewState: "needs_review",
+      }),
+    ]),
+    rows: expect.arrayContaining([
+      expect.objectContaining({
+        expectedGrossAmountMinor: 100_000,
+        expectedNetAmountMinor: 80_000,
+      }),
+    ]),
+  });
+  const nextMonth = await app.inject({
+    method: "GET",
+    url: `/income-forecast-runs/${run.run.id}?horizon=next_month`,
+  });
+  expect(nextMonth.json().rows).toHaveLength(1);
+  await app.close();
+  await rm(dataHome, { force: true, recursive: true });
+});

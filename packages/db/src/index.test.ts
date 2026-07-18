@@ -937,6 +937,357 @@ describe("SQLite foundation", () => {
     database.close();
   });
 
+  test("forecasts person-linked income from effective-dated schedules", () => {
+    const database = createDatabase();
+    database.migrate();
+    const unitOfWork = createUnitOfWork(database);
+    const household = unitOfWork.households.create({
+      currency: "USD",
+      name: "Income household",
+    });
+    const person = unitOfWork.households.createPerson({
+      birthDate: null,
+      dependent: false,
+      dependentUntil: null,
+      householdId: household.id,
+      name: "Avery Example",
+      relationship: "self",
+    });
+    const w2 = unitOfWork.income.createSource({
+      kind: "w2",
+      name: "Example Co. salary",
+      personId: person.id,
+    });
+    const baseSchedule = unitOfWork.income.createSchedule({
+      annualGrowthBps: 0,
+      behavior: "fixed",
+      cadence: "monthly",
+      confidence: 1,
+      currency: "USD",
+      deductionAmountMinor: null,
+      effectiveFrom: "2026-01-01",
+      effectiveTo: "2026-07-01",
+      expectedNetAmountMinor: 80_000,
+      grossAmountMinor: 100_000,
+      grossIncomeBasis: "gross",
+      highGrossAmountMinor: null,
+      lowGrossAmountMinor: null,
+      source: "paystub",
+      sourceId: w2.id,
+      verifiedAt: null,
+      verifiedBy: null,
+      withholdingRateBps: null,
+    });
+    unitOfWork.income.createSchedule({
+      ...baseSchedule,
+      effectiveFrom: "2026-07-01",
+      effectiveTo: null,
+      expectedNetAmountMinor: 88_000,
+      grossAmountMinor: 110_000,
+    });
+    const contractor = unitOfWork.income.createSource({
+      kind: "contractor",
+      name: "Consulting",
+      personId: person.id,
+    });
+    unitOfWork.income.createSchedule({
+      annualGrowthBps: 0,
+      behavior: "variable",
+      cadence: "monthly",
+      confidence: 0.7,
+      currency: "USD",
+      deductionAmountMinor: null,
+      effectiveFrom: "2026-07-01",
+      effectiveTo: null,
+      expectedNetAmountMinor: null,
+      grossAmountMinor: 100_000,
+      grossIncomeBasis: "gross",
+      highGrossAmountMinor: 150_000,
+      lowGrossAmountMinor: 50_000,
+      source: "contract",
+      sourceId: contractor.id,
+      verifiedAt: null,
+      verifiedBy: null,
+      withholdingRateBps: 1_000,
+    });
+    const bonus = unitOfWork.income.createSource({
+      kind: "bonus",
+      name: "Annual bonus",
+      personId: person.id,
+    });
+    unitOfWork.income.createSchedule({
+      annualGrowthBps: 0,
+      behavior: "fixed",
+      cadence: "annual",
+      confidence: 0.8,
+      currency: "USD",
+      deductionAmountMinor: 25_000,
+      effectiveFrom: "2026-03-15",
+      effectiveTo: null,
+      expectedNetAmountMinor: null,
+      grossAmountMinor: 200_000,
+      grossIncomeBasis: "gross",
+      highGrossAmountMinor: null,
+      lowGrossAmountMinor: null,
+      source: "offer letter",
+      sourceId: bonus.id,
+      verifiedAt: null,
+      verifiedBy: null,
+      withholdingRateBps: 2_000,
+    });
+    const unknown = unitOfWork.income.createSource({
+      kind: "other",
+      name: "Unknown distribution",
+      personId: person.id,
+    });
+    unitOfWork.income.createSchedule({
+      annualGrowthBps: 0,
+      behavior: "fixed",
+      cadence: "annual",
+      confidence: 0.2,
+      currency: "USD",
+      deductionAmountMinor: null,
+      effectiveFrom: "2026-11-01",
+      effectiveTo: null,
+      expectedNetAmountMinor: null,
+      grossAmountMinor: 10_000,
+      grossIncomeBasis: "gross",
+      highGrossAmountMinor: null,
+      lowGrossAmountMinor: null,
+      source: "user estimate",
+      sourceId: unknown.id,
+      verifiedAt: null,
+      verifiedBy: null,
+      withholdingRateBps: null,
+    });
+
+    expect(() =>
+      unitOfWork.income.createSchedule({
+        annualGrowthBps: 0,
+        behavior: "fixed",
+        cadence: "monthly",
+        confidence: 1,
+        currency: "USD",
+        deductionAmountMinor: null,
+        effectiveFrom: "2026-06-01",
+        effectiveTo: null,
+        expectedNetAmountMinor: 80_000,
+        grossAmountMinor: 100_000,
+        grossIncomeBasis: "gross",
+        highGrossAmountMinor: null,
+        lowGrossAmountMinor: null,
+        source: "paystub",
+        sourceId: w2.id,
+        verifiedAt: null,
+        verifiedBy: null,
+        withholdingRateBps: null,
+      }),
+    ).toThrow(/cannot overlap/);
+
+    const forecast = unitOfWork.income.forecast(household.id, "2026-01-01", 60);
+    expect(forecast.monthly).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          expectedNetAmountMinor: 80_000,
+          month: "2026-01-01",
+          scheduleId: baseSchedule.id,
+        }),
+        expect.objectContaining({
+          expectedNetAmountMinor: 90_000,
+          highNetAmountMinor: 135_000,
+          lowNetAmountMinor: 45_000,
+          month: "2026-07-01",
+        }),
+        expect.objectContaining({
+          expectedNetAmountMinor: null,
+          month: "2026-11-01",
+          warnings: [expect.stringContaining("unknown")],
+        }),
+      ]),
+    );
+    expect(forecast.annual).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ year: 2026, currency: "USD" }),
+        expect.objectContaining({ year: 2030, currency: "USD" }),
+      ]),
+    );
+    expect(unitOfWork.income.listSchedules(w2.id)).toHaveLength(2);
+    database.close();
+  });
+
+  test("snapshots monthly income and reconciles only earned-income deposits", () => {
+    const database = createDatabase();
+    database.migrate();
+    const unitOfWork = createUnitOfWork(database);
+    const household = unitOfWork.households.create({
+      currency: "USD",
+      name: "Reconciliation household",
+    });
+    const person = unitOfWork.households.createPerson({
+      birthDate: null,
+      dependent: false,
+      dependentUntil: null,
+      householdId: household.id,
+      name: "Avery",
+      relationship: "self",
+    });
+    const source = unitOfWork.income.createSource({
+      kind: "w2",
+      name: "Example Co. salary",
+      personId: person.id,
+    });
+    unitOfWork.income.createSchedule({
+      annualGrowthBps: 0,
+      behavior: "fixed",
+      cadence: "monthly",
+      confidence: 1,
+      currency: "USD",
+      deductionAmountMinor: null,
+      effectiveFrom: "2026-07-01",
+      effectiveTo: null,
+      expectedNetAmountMinor: 80_000,
+      grossAmountMinor: 100_000,
+      grossIncomeBasis: "gross",
+      highGrossAmountMinor: null,
+      lowGrossAmountMinor: null,
+      source: "paystub",
+      sourceId: source.id,
+      verifiedAt: null,
+      verifiedBy: null,
+      withholdingRateBps: null,
+    });
+    const institution = createTestInstitution(unitOfWork, "Income Bank");
+    const account = unitOfWork.accounts.create({
+      accountType: "checking",
+      currency: "USD",
+      externalConnectionId: null,
+      externalId: null,
+      institutionId: institution.id,
+      name: "Income",
+      status: "active",
+    });
+    const salary = unitOfWork.categories.create({
+      name: "Salary",
+      parentId: null,
+      status: "active",
+    });
+    const refund = unitOfWork.categories.create({
+      name: "Refund",
+      parentId: null,
+      status: "active",
+    });
+    const batch = unitOfWork.importBatches.create({
+      actor: "user",
+      checksum: "income-reconciliation-batch",
+      source: "manual",
+    });
+    const deposits = [
+      {
+        amountMinor: 50_000,
+        categoryId: salary.id,
+        day: "01",
+        id: "salary-part-one",
+      },
+      {
+        amountMinor: 30_000,
+        categoryId: salary.id,
+        day: "15",
+        id: "salary-part-two",
+      },
+      {
+        amountMinor: 12_000,
+        categoryId: salary.id,
+        day: "20",
+        id: "unrelated-credit",
+      },
+      {
+        amountMinor: 10_000,
+        categoryId: refund.id,
+        day: "25",
+        id: "refund-credit",
+      },
+    ];
+    for (const deposit of deposits) {
+      const sourceRecord = unitOfWork.sourceRecords.create({
+        batchId: batch.id,
+        checksum: deposit.id,
+        rawPayload: "{}",
+        sourceType: "manual",
+      });
+      unitOfWork.transactions.create({
+        accountId: account.id,
+        amountMinor: deposit.amountMinor,
+        categoryId: deposit.categoryId,
+        currency: "USD",
+        merchant: null,
+        payee: "Example Employer",
+        postedAt: null,
+        sourceCategory: null,
+        sourceIdentity: deposit.id,
+        sourceRecordId: sourceRecord.id,
+        status: "posted",
+        transactionDate: `2026-07-${deposit.day}T00:00:00.000Z`,
+      });
+    }
+    unitOfWork.incomeClassifications.refresh();
+    const run = unitOfWork.incomeReconciliation.run(household.id, {
+      dataAsOf: "2026-08-31",
+      months: 2,
+      startMonth: "2026-07-01",
+    });
+    expect(run.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          expectedGrossAmountMinor: 100_000,
+          expectedNetAmountMinor: 80_000,
+          month: "2026-07-01",
+        }),
+      ]),
+    );
+    expect(run.matches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          expectedNetAmountMinor: 80_000,
+          matchMethod: "inferred",
+          observedNetAmountMinor: 80_000,
+          varianceMinor: 0,
+        }),
+        expect.objectContaining({
+          matchMethod: "unmatched_expected",
+          reviewState: "needs_review",
+        }),
+        expect.objectContaining({
+          matchMethod: "unexplained_deposit",
+          observedNetAmountMinor: 12_000,
+        }),
+      ]),
+    );
+    expect(
+      run.matches.some((match) => match.observedNetAmountMinor === 10_000),
+    ).toBe(false);
+    const inferred = run.matches.find(
+      (match) => match.matchMethod === "inferred",
+    );
+    const confirmed = unitOfWork.incomeReconciliation.confirmMatch(
+      inferred?.id ?? "",
+      inferred?.transactionIds ?? [],
+    );
+    expect(confirmed).toMatchObject({
+      confidence: 1,
+      matchMethod: "user_confirmed",
+      observedNetAmountMinor: 80_000,
+      reviewState: "confirmed",
+      varianceMinor: 0,
+    });
+    expect(unitOfWork.income.listSchedules(source.id)[0]).toMatchObject({
+      expectedNetAmountMinor: 80_000,
+    });
+    const replay = unitOfWork.incomeReconciliation.getRun(run.run.id, 1);
+    expect(replay?.rows).toHaveLength(1);
+    expect(replay?.run.inputVersion).toBe(run.run.inputVersion);
+    database.close();
+  });
+
   test("manages and deterministically clones audited budget targets", () => {
     const database = createDatabase();
     database.migrate();

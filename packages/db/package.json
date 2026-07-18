@@ -29,6 +29,14 @@
       "types": "./dist/obligations.d.ts",
       "import": "./dist/obligations.js"
     },
+    "./income": {
+      "types": "./dist/income.d.ts",
+      "import": "./dist/income.js"
+    },
+    "./income-reconciliation": {
+      "types": "./dist/income-reconciliation.d.ts",
+      "import": "./dist/income-reconciliation.js"
+    },
     "./budgets": {
       "types": "./dist/budgets.d.ts",
       "import": "./dist/budgets.js"

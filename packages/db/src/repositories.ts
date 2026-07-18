@@ -36,6 +36,11 @@ import {
   createFinancialStateRepository,
   type FinancialStateRepository,
 } from "./financial-state.js";
+import { createIncomeRepository, type IncomeRepository } from "./income.js";
+import {
+  createIncomeReconciliationRepository,
+  type IncomeReconciliationRepository,
+} from "./income-reconciliation.js";
 
 export type Page<T> = Readonly<{ items: readonly T[]; nextCursor?: string }>;
 export type PageRequest = Readonly<{
@@ -439,6 +444,8 @@ export interface UnitOfWork {
   readonly importBatches: ImportBatchRepository;
   readonly institutions: InstitutionRepository;
   readonly incomeClassifications: IncomeClassificationRepository;
+  readonly income: IncomeRepository;
+  readonly incomeReconciliation: IncomeReconciliationRepository;
   readonly households: HouseholdRepository;
   readonly goals: GoalRepository;
   readonly investments: InvestmentRepository;
@@ -1544,6 +1551,16 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
   const obligations = createObligationRepository(database, (input) => {
     auditEvents.append({ ...input, sourceRecordId: null });
   });
+  const income = createIncomeRepository(database, (input) => {
+    auditEvents.append({ ...input, sourceRecordId: null });
+  });
+  const incomeReconciliation = createIncomeReconciliationRepository(
+    database,
+    income,
+    (input) => {
+      auditEvents.append({ ...input, sourceRecordId: null });
+    },
+  );
   const budgets = createBudgetRepository(database, (input) => {
     auditEvents.append({ ...input, sourceRecordId: null });
   });
@@ -1561,7 +1578,9 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
     financialState,
     importBatches,
     institutions: institutionServices.institutions,
+    income,
     incomeClassifications,
+    incomeReconciliation,
     households,
     goals,
     investments,

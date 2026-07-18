@@ -669,6 +669,281 @@ export type Person = z.infer<typeof personSchema>;
 export type HouseholdFact = z.infer<typeof householdFactSchema>;
 export type CreateHouseholdFact = z.input<typeof createHouseholdFactSchema>;
 
+export const incomeSourceKindSchema = z.enum([
+  "w2",
+  "contractor",
+  "self_employment",
+  "bonus",
+  "investment",
+  "other",
+]);
+export const incomeScheduleBehaviorSchema = z.enum(["fixed", "variable"]);
+export const incomeCadenceSchema = z.enum([
+  "weekly",
+  "biweekly",
+  "semimonthly",
+  "monthly",
+  "quarterly",
+  "annual",
+]);
+export const incomeSourceSchema = z.object({
+  createdAt: z.iso.datetime(),
+  id: entityIdSchema,
+  kind: incomeSourceKindSchema,
+  name: z.string().trim().min(1).max(200),
+  personId: entityIdSchema,
+  updatedAt: z.iso.datetime(),
+});
+export const createIncomeSourceSchema = incomeSourceSchema.pick({
+  kind: true,
+  name: true,
+  personId: true,
+});
+export const incomeSourceListSchema = z.object({
+  items: z.array(incomeSourceSchema),
+});
+export const incomeScheduleSchema = z.object({
+  annualGrowthBps: z.number().int().min(-10_000).max(100_000),
+  behavior: incomeScheduleBehaviorSchema,
+  cadence: incomeCadenceSchema,
+  confidence: z.number().min(0).max(1),
+  createdAt: z.iso.datetime(),
+  currency: currencySchema,
+  deductionAmountMinor: z.number().int().nonnegative().nullable(),
+  effectiveFrom: z.iso.date(),
+  effectiveTo: z.iso.date().nullable(),
+  expectedNetAmountMinor: z.number().int().nonnegative().nullable(),
+  grossAmountMinor: z.number().int().nonnegative(),
+  grossIncomeBasis: z.literal("gross"),
+  highGrossAmountMinor: z.number().int().nonnegative().nullable(),
+  id: entityIdSchema,
+  lowGrossAmountMinor: z.number().int().nonnegative().nullable(),
+  personId: entityIdSchema,
+  source: z.string().trim().min(1).max(200),
+  sourceId: entityIdSchema,
+  updatedAt: z.iso.datetime(),
+  verifiedAt: z.iso.datetime().nullable(),
+  verifiedBy: z.string().trim().min(1).max(200).nullable(),
+  withholdingRateBps: z.number().int().min(0).max(10_000).nullable(),
+});
+const incomeScheduleInputFields = {
+  annualGrowthBps: true,
+  behavior: true,
+  cadence: true,
+  confidence: true,
+  currency: true,
+  deductionAmountMinor: true,
+  effectiveFrom: true,
+  effectiveTo: true,
+  expectedNetAmountMinor: true,
+  grossAmountMinor: true,
+  grossIncomeBasis: true,
+  highGrossAmountMinor: true,
+  lowGrossAmountMinor: true,
+  source: true,
+  verifiedAt: true,
+  verifiedBy: true,
+  withholdingRateBps: true,
+} as const;
+const incomeScheduleInputSchema = incomeScheduleSchema
+  .pick(incomeScheduleInputFields)
+  .partial({
+    deductionAmountMinor: true,
+    effectiveTo: true,
+    expectedNetAmountMinor: true,
+    highGrossAmountMinor: true,
+    lowGrossAmountMinor: true,
+    verifiedAt: true,
+    verifiedBy: true,
+    withholdingRateBps: true,
+  })
+  .extend({
+    annualGrowthBps: z.number().int().min(-10_000).max(100_000).default(0),
+    deductionAmountMinor: z
+      .number()
+      .int()
+      .nonnegative()
+      .nullable()
+      .default(null),
+    effectiveTo: z.iso.date().nullable().default(null),
+    expectedNetAmountMinor: z
+      .number()
+      .int()
+      .nonnegative()
+      .nullable()
+      .default(null),
+    grossIncomeBasis: z.literal("gross").default("gross"),
+    highGrossAmountMinor: z
+      .number()
+      .int()
+      .nonnegative()
+      .nullable()
+      .default(null),
+    lowGrossAmountMinor: z
+      .number()
+      .int()
+      .nonnegative()
+      .nullable()
+      .default(null),
+    verifiedAt: z.iso.datetime().nullable().default(null),
+    verifiedBy: z.string().trim().min(1).max(200).nullable().default(null),
+    withholdingRateBps: z
+      .number()
+      .int()
+      .min(0)
+      .max(10_000)
+      .nullable()
+      .default(null),
+  });
+export const createIncomeScheduleSchema = incomeScheduleInputSchema.superRefine(
+  (value, context) => {
+    if (
+      value.effectiveTo !== null &&
+      value.effectiveTo <= value.effectiveFrom
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Effective end must be after the start date.",
+      });
+    }
+    const hasDerivedNet =
+      value.withholdingRateBps !== null || value.deductionAmountMinor !== null;
+    if (value.behavior === "variable") {
+      if (
+        value.lowGrossAmountMinor === null ||
+        value.highGrossAmountMinor === null
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Variable income requires low and high gross amounts.",
+        });
+      }
+      if (value.expectedNetAmountMinor !== null) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Variable income must use withholding or deduction assumptions so all bounds can be derived.",
+        });
+      }
+    } else if (
+      value.lowGrossAmountMinor !== null ||
+      value.highGrossAmountMinor !== null
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Fixed income cannot include variability bounds.",
+      });
+    }
+    if (value.expectedNetAmountMinor === null && !hasDerivedNet) return;
+  },
+);
+export const updateIncomeScheduleSchema = incomeScheduleInputSchema
+  .partial()
+  .refine(
+    (value) => Object.keys(value).length > 0,
+    "Provide at least one field to update",
+  );
+export const incomeScheduleListSchema = z.object({
+  items: z.array(incomeScheduleSchema),
+});
+export const incomeForecastQuerySchema = z.object({
+  months: z.coerce.number().int().min(1).max(600).default(60),
+  startMonth: z.iso.date(),
+});
+export const incomeForecastOccurrenceSchema = z.object({
+  currency: currencySchema,
+  expectedGrossAmountMinor: z.number().int().safe(),
+  expectedNetAmountMinor: z.number().int().safe().nullable(),
+  highGrossAmountMinor: z.number().int().safe(),
+  highNetAmountMinor: z.number().int().safe().nullable(),
+  lowGrossAmountMinor: z.number().int().safe(),
+  lowNetAmountMinor: z.number().int().safe().nullable(),
+  month: z.iso.date(),
+  personId: entityIdSchema,
+  scheduleId: entityIdSchema,
+  sourceId: entityIdSchema,
+  warnings: z.array(z.string()),
+});
+export const incomeForecastAnnualTotalSchema = z.object({
+  currency: currencySchema,
+  expectedNetAmountMinor: z.number().int().safe().nullable(),
+  highNetAmountMinor: z.number().int().safe().nullable(),
+  lowNetAmountMinor: z.number().int().safe().nullable(),
+  year: z.number().int(),
+});
+export const incomeForecastSchema = z.object({
+  annual: z.array(incomeForecastAnnualTotalSchema),
+  monthly: z.array(incomeForecastOccurrenceSchema),
+});
+export const incomeForecastRunSchema = z.object({
+  createdAt: z.iso.datetime(),
+  dataAsOf: z.iso.date(),
+  householdId: entityIdSchema,
+  id: entityIdSchema,
+  inputVersion: z.string().regex(/^[a-f0-9]{64}$/),
+  months: z.number().int().min(1).max(600),
+  startMonth: z.iso.date(),
+});
+export const createIncomeForecastRunSchema = z.object({
+  dataAsOf: z.iso.date(),
+  months: z.number().int().min(1).max(60).default(60),
+  startMonth: z.iso.date(),
+});
+export const incomeForecastRowSchema = z.object({
+  currency: currencySchema,
+  expectedGrossAmountMinor: z.number().int().safe(),
+  expectedNetAmountMinor: z.number().int().safe().nullable(),
+  highGrossAmountMinor: z.number().int().safe(),
+  highNetAmountMinor: z.number().int().safe().nullable(),
+  id: entityIdSchema,
+  lowGrossAmountMinor: z.number().int().safe(),
+  lowNetAmountMinor: z.number().int().safe().nullable(),
+  month: z.iso.date(),
+  personId: entityIdSchema,
+  runId: entityIdSchema,
+  scheduleId: entityIdSchema,
+  sourceId: entityIdSchema,
+  warnings: z.array(z.string()),
+});
+export const incomeReconciliationMatchSchema = z.object({
+  confidence: z.number().min(0).max(1),
+  createdAt: z.iso.datetime(),
+  dataAsOf: z.iso.date(),
+  expectedGrossAmountMinor: z.number().int().safe().nullable(),
+  expectedNetAmountMinor: z.number().int().safe().nullable(),
+  forecastRowId: entityIdSchema.nullable(),
+  id: entityIdSchema,
+  inputVersion: z.string().regex(/^[a-f0-9]{64}$/),
+  matchMethod: z.enum([
+    "inferred",
+    "unmatched_expected",
+    "unexplained_deposit",
+    "user_confirmed",
+  ]),
+  observedNetAmountMinor: z.number().int().safe().nullable(),
+  reviewState: z.enum(["matched", "needs_review", "confirmed", "unexplained"]),
+  runId: entityIdSchema,
+  transactionIds: z.array(entityIdSchema),
+  updatedAt: z.iso.datetime(),
+  varianceMinor: z.number().int().safe().nullable(),
+});
+export const incomeForecastRunResultSchema = z.object({
+  matches: z.array(incomeReconciliationMatchSchema),
+  rows: z.array(incomeForecastRowSchema),
+  run: incomeForecastRunSchema,
+});
+export const incomeForecastHorizonQuerySchema = z.object({
+  horizon: z
+    .enum(["next_month", "six_month", "one_year", "five_year"])
+    .optional(),
+});
+export const confirmIncomeReconciliationMatchSchema = z.object({
+  actor: z.string().trim().min(1).max(100).default("user"),
+  transactionIds: z.array(entityIdSchema).min(1),
+});
+export type IncomeSource = z.infer<typeof incomeSourceSchema>;
+export type IncomeSchedule = z.infer<typeof incomeScheduleSchema>;
+
 export const financialGoalSchema = z.object({
   accountId: entityIdSchema.nullable(),
   constraintLevel: z.enum(["hard", "soft"]),
@@ -1147,6 +1422,66 @@ export const openApiDocument = Object.freeze({
       post: {
         operationId: "createAccountBalance",
         responses: { "201": { description: "Balance recorded" } },
+      },
+    },
+    "/households/{id}/income-sources": {
+      get: {
+        operationId: "listIncomeSources",
+        responses: { "200": { description: "Income sources for a household" } },
+      },
+      post: {
+        operationId: "createIncomeSource",
+        responses: { "201": { description: "Income source created" } },
+      },
+    },
+    "/income-sources/{id}/schedules": {
+      get: {
+        operationId: "listIncomeSchedules",
+        responses: {
+          "200": { description: "Effective-dated income schedules" },
+        },
+      },
+      post: {
+        operationId: "createIncomeSchedule",
+        responses: { "201": { description: "Income schedule created" } },
+      },
+    },
+    "/income-schedules/{id}": {
+      patch: {
+        operationId: "updateIncomeSchedule",
+        responses: { "200": { description: "Income schedule updated" } },
+      },
+    },
+    "/households/{id}/income-forecast": {
+      get: {
+        operationId: "getIncomeForecast",
+        responses: {
+          "200": { description: "Monthly occurrences with annual rollups" },
+        },
+      },
+    },
+    "/households/{id}/income-forecast-runs": {
+      post: {
+        operationId: "createIncomeForecastRun",
+        responses: {
+          "201": {
+            description: "Immutable income forecast and reconciliation",
+          },
+        },
+      },
+    },
+    "/income-forecast-runs/{id}": {
+      get: {
+        operationId: "getIncomeForecastRun",
+        responses: {
+          "200": { description: "Income forecast rows for a selected horizon" },
+        },
+      },
+    },
+    "/income-reconciliation-matches/{id}/confirm": {
+      post: {
+        operationId: "confirmIncomeReconciliationMatch",
+        responses: { "200": { description: "User-confirmed income match" } },
       },
     },
     "/institutions": {

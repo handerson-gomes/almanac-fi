@@ -43,6 +43,9 @@ import {
   createProviderConnectionSchema,
   createFinancialGoalSchema,
   createHoldingSchema,
+  createIncomeForecastRunSchema,
+  createIncomeScheduleSchema,
+  createIncomeSourceSchema,
   createInvestmentTransactionSchema,
   createLiabilitySchema,
   createLiabilityTermsSchema,
@@ -79,6 +82,16 @@ import {
   incomeClassificationStatusSchema,
   incomeConfirmationSchema,
   incomeSummarySchema,
+  incomeForecastQuerySchema,
+  incomeForecastSchema,
+  incomeForecastHorizonQuerySchema,
+  incomeForecastRunResultSchema,
+  incomeReconciliationMatchSchema,
+  incomeScheduleListSchema,
+  incomeScheduleSchema,
+  incomeSourceListSchema,
+  incomeSourceSchema,
+  confirmIncomeReconciliationMatchSchema,
   investmentTransactionListSchema,
   investmentTransactionSchema,
   investmentValuationSchema,
@@ -120,6 +133,7 @@ import {
   updateProviderConnectionSchema,
   updateHouseholdSchema,
   updateHoldingSchema,
+  updateIncomeScheduleSchema,
 } from "@almanac-fi/api-contracts";
 import { calculateBudget } from "@almanac-fi/core";
 import { createDatabase, now, type AppDatabase } from "@almanac-fi/db";
@@ -1301,6 +1315,161 @@ export async function createServer(
         asOf ?? new Date().toISOString().slice(0, 10),
       ),
     });
+  });
+  app.get("/households/:id/income-sources", async (request) => {
+    const householdId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    return incomeSourceListSchema.parse({
+      items: unitOfWork.income.listSources(householdId),
+    });
+  });
+  app.post("/households/:id/income-sources", async (request, reply) => {
+    const householdId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const input = parseRequest(createIncomeSourceSchema, request.body);
+    if (
+      !unitOfWork.households
+        .listPeople(householdId)
+        .some((person) => person.id === input.personId)
+    ) {
+      badRequest("Income sources must belong to a person in the household.");
+    }
+    return reply
+      .status(201)
+      .send(incomeSourceSchema.parse(unitOfWork.income.createSource(input)));
+  });
+  app.get("/income-sources/:id/schedules", async (request) => {
+    const sourceId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    return incomeScheduleListSchema.parse({
+      items: unitOfWork.income.listSchedules(sourceId),
+    });
+  });
+  app.post("/income-sources/:id/schedules", async (request, reply) => {
+    const sourceId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    try {
+      return reply.status(201).send(
+        incomeScheduleSchema.parse(
+          unitOfWork.income.createSchedule({
+            ...parseRequest(createIncomeScheduleSchema, request.body),
+            sourceId,
+          }),
+        ),
+      );
+    } catch (error) {
+      if (error instanceof Error) badRequest(error.message);
+      throw error;
+    }
+  });
+  app.patch("/income-schedules/:id", async (request) => {
+    const scheduleId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    let schedule;
+    try {
+      schedule = unitOfWork.income.updateSchedule(
+        scheduleId,
+        parseRequest(updateIncomeScheduleSchema, request.body),
+      );
+    } catch (error) {
+      if (error instanceof Error) badRequest(error.message);
+      throw error;
+    }
+    if (schedule === undefined) notFound("Income schedule was not found.");
+    return incomeScheduleSchema.parse(schedule);
+  });
+  app.get("/households/:id/income-forecast", async (request) => {
+    const householdId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const { months, startMonth } = parseRequest(
+      incomeForecastQuerySchema,
+      request.query,
+    );
+    return incomeForecastSchema.parse(
+      unitOfWork.income.forecast(householdId, startMonth, months),
+    );
+  });
+  app.post("/households/:id/income-forecast-runs", async (request, reply) => {
+    const householdId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    if (!unitOfWork.households.findById(householdId))
+      notFound("The household does not exist.");
+    try {
+      return reply
+        .status(201)
+        .send(
+          incomeForecastRunResultSchema.parse(
+            unitOfWork.incomeReconciliation.run(
+              householdId,
+              parseRequest(createIncomeForecastRunSchema, request.body),
+            ),
+          ),
+        );
+    } catch (error) {
+      if (error instanceof Error) badRequest(error.message);
+      throw error;
+    }
+  });
+  app.get("/income-forecast-runs/:id", async (request) => {
+    const runId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const { horizon } = parseRequest(
+      incomeForecastHorizonQuerySchema,
+      request.query,
+    );
+    const horizonMonths =
+      horizon === "next_month"
+        ? 1
+        : horizon === "six_month"
+          ? 6
+          : horizon === "one_year"
+            ? 12
+            : horizon === "five_year"
+              ? 60
+              : undefined;
+    const result = unitOfWork.incomeReconciliation.getRun(runId, horizonMonths);
+    if (result === undefined) notFound("Income forecast run was not found.");
+    return incomeForecastRunResultSchema.parse(result);
+  });
+  app.post("/income-reconciliation-matches/:id/confirm", async (request) => {
+    const matchId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const input = parseRequest(
+      confirmIncomeReconciliationMatchSchema,
+      request.body,
+    );
+    let match;
+    try {
+      match = unitOfWork.incomeReconciliation.confirmMatch(
+        matchId,
+        input.transactionIds,
+        input.actor,
+      );
+    } catch (error) {
+      if (error instanceof Error) badRequest(error.message);
+      throw error;
+    }
+    if (match === undefined)
+      notFound("Income reconciliation match was not found.");
+    return incomeReconciliationMatchSchema.parse(match);
   });
   app.post("/liabilities/:id/scenario-overrides", async (request, reply) => {
     const liabilityId = parseRequest(

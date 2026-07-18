@@ -327,6 +327,108 @@ export const incomeClassifications = sqliteTable("income_classifications", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const incomeSources = sqliteTable("income_sources", {
+  createdAt: text("created_at").notNull(),
+  id: text("id").primaryKey(),
+  kind: text("kind", {
+    enum: [
+      "w2",
+      "contractor",
+      "self_employment",
+      "bonus",
+      "investment",
+      "other",
+    ],
+  }).notNull(),
+  name: text("name").notNull(),
+  personId: text("person_id").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const incomeSchedules = sqliteTable("income_schedules", {
+  annualGrowthBps: integer("annual_growth_bps").notNull(),
+  behavior: text("behavior", { enum: ["fixed", "variable"] }).notNull(),
+  cadence: text("cadence", {
+    enum: [
+      "weekly",
+      "biweekly",
+      "semimonthly",
+      "monthly",
+      "quarterly",
+      "annual",
+    ],
+  }).notNull(),
+  confidence: real("confidence").notNull(),
+  createdAt: text("created_at").notNull(),
+  currency: text("currency").notNull(),
+  deductionAmountMinor: integer("deduction_amount_minor"),
+  effectiveFrom: text("effective_from").notNull(),
+  effectiveTo: text("effective_to"),
+  expectedNetAmountMinor: integer("expected_net_amount_minor"),
+  grossAmountMinor: integer("gross_amount_minor").notNull(),
+  grossIncomeBasis: text("gross_income_basis", { enum: ["gross"] }).notNull(),
+  highGrossAmountMinor: integer("high_gross_amount_minor"),
+  id: text("id").primaryKey(),
+  lowGrossAmountMinor: integer("low_gross_amount_minor"),
+  personId: text("person_id").notNull(),
+  source: text("source").notNull(),
+  sourceId: text("source_id")
+    .notNull()
+    .references(() => incomeSources.id, { onDelete: "cascade" }),
+  updatedAt: text("updated_at").notNull(),
+  verifiedAt: text("verified_at"),
+  verifiedBy: text("verified_by"),
+  withholdingRateBps: integer("withholding_rate_bps"),
+});
+
+export const incomeForecastRuns = sqliteTable("income_forecast_runs", {
+  createdAt: text("created_at").notNull(),
+  dataAsOf: text("data_as_of").notNull(),
+  householdId: text("household_id").notNull(),
+  id: text("id").primaryKey(),
+  inputVersion: text("input_version").notNull(),
+  months: integer("months").notNull(),
+  startMonth: text("start_month").notNull(),
+});
+
+export const incomeForecastRows = sqliteTable("income_forecast_rows", {
+  createdAt: text("created_at").notNull(),
+  currency: text("currency").notNull(),
+  expectedGrossAmountMinor: integer("expected_gross_amount_minor").notNull(),
+  expectedNetAmountMinor: integer("expected_net_amount_minor"),
+  highGrossAmountMinor: integer("high_gross_amount_minor").notNull(),
+  highNetAmountMinor: integer("high_net_amount_minor"),
+  id: text("id").primaryKey(),
+  lowGrossAmountMinor: integer("low_gross_amount_minor").notNull(),
+  lowNetAmountMinor: integer("low_net_amount_minor"),
+  month: text("month").notNull(),
+  personId: text("person_id").notNull(),
+  runId: text("run_id").notNull(),
+  scheduleId: text("schedule_id").notNull(),
+  sourceId: text("source_id").notNull(),
+  warningsJson: text("warnings_json").notNull(),
+});
+
+export const incomeReconciliationMatches = sqliteTable(
+  "income_reconciliation_matches",
+  {
+    confidence: real("confidence").notNull(),
+    createdAt: text("created_at").notNull(),
+    dataAsOf: text("data_as_of").notNull(),
+    expectedGrossAmountMinor: integer("expected_gross_amount_minor"),
+    expectedNetAmountMinor: integer("expected_net_amount_minor"),
+    forecastRowId: text("forecast_row_id"),
+    id: text("id").primaryKey(),
+    inputVersion: text("input_version").notNull(),
+    matchMethod: text("match_method").notNull(),
+    observedNetAmountMinor: integer("observed_net_amount_minor"),
+    reviewState: text("review_state").notNull(),
+    runId: text("run_id").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    varianceMinor: integer("variance_minor"),
+  },
+);
+
 export const csvMappings = sqliteTable("csv_mappings", {
   createdAt: text("created_at").notNull(),
   id: text("id").primaryKey(),

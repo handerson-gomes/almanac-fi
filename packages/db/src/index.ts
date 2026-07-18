@@ -381,6 +381,97 @@ const migrations = [
     `,
     down: `DROP INDEX IF EXISTS account_balances_current_as_of;`,
   },
+  {
+    id: "0013_person_linked_income_forecast",
+    up: `
+      CREATE TABLE IF NOT EXISTS income_sources (
+        id TEXT PRIMARY KEY, person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+        name TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('w2', 'contractor', 'self_employment', 'bonus', 'investment', 'other')),
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS income_schedules (
+        id TEXT PRIMARY KEY, source_id TEXT NOT NULL REFERENCES income_sources(id) ON DELETE CASCADE,
+        person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+        behavior TEXT NOT NULL CHECK(behavior IN ('fixed', 'variable')),
+        gross_amount_minor INTEGER NOT NULL CHECK(gross_amount_minor >= 0),
+        low_gross_amount_minor INTEGER, high_gross_amount_minor INTEGER,
+        gross_income_basis TEXT NOT NULL CHECK(gross_income_basis = 'gross'),
+        cadence TEXT NOT NULL CHECK(cadence IN ('weekly', 'biweekly', 'semimonthly', 'monthly', 'quarterly', 'annual')),
+        currency TEXT NOT NULL CHECK(currency GLOB '[A-Z][A-Z][A-Z]'),
+        expected_net_amount_minor INTEGER,
+        withholding_rate_bps INTEGER CHECK(withholding_rate_bps BETWEEN 0 AND 10000),
+        deduction_amount_minor INTEGER CHECK(deduction_amount_minor >= 0),
+        effective_from TEXT NOT NULL, effective_to TEXT,
+        annual_growth_bps INTEGER NOT NULL DEFAULT 0 CHECK(annual_growth_bps BETWEEN -10000 AND 100000),
+        source TEXT NOT NULL, confidence REAL NOT NULL CHECK(confidence >= 0 AND confidence <= 1),
+        verified_at TEXT, verified_by TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        CHECK(effective_to IS NULL OR effective_to > effective_from),
+        CHECK(low_gross_amount_minor IS NULL OR low_gross_amount_minor <= gross_amount_minor),
+        CHECK(high_gross_amount_minor IS NULL OR high_gross_amount_minor >= gross_amount_minor),
+        CHECK(behavior = 'variable' OR (low_gross_amount_minor IS NULL AND high_gross_amount_minor IS NULL)),
+        CHECK(behavior = 'fixed' OR (low_gross_amount_minor IS NOT NULL AND high_gross_amount_minor IS NOT NULL)),
+        CHECK(expected_net_amount_minor IS NULL OR behavior = 'fixed')
+      );
+      CREATE INDEX IF NOT EXISTS income_sources_person ON income_sources(person_id, name);
+      CREATE INDEX IF NOT EXISTS income_schedules_source_effective
+        ON income_schedules(source_id, effective_from, effective_to);
+      CREATE TRIGGER IF NOT EXISTS income_schedules_person_matches_source_insert
+        BEFORE INSERT ON income_schedules
+        WHEN NOT EXISTS (SELECT 1 FROM income_sources WHERE id = NEW.source_id AND person_id = NEW.person_id)
+        BEGIN SELECT RAISE(ABORT, 'income schedule person must match its source'); END;
+      CREATE TRIGGER IF NOT EXISTS income_schedules_person_matches_source_update
+        BEFORE UPDATE OF source_id, person_id ON income_schedules
+        WHEN NOT EXISTS (SELECT 1 FROM income_sources WHERE id = NEW.source_id AND person_id = NEW.person_id)
+        BEGIN SELECT RAISE(ABORT, 'income schedule person must match its source'); END;
+    `,
+    down: `DROP TRIGGER IF EXISTS income_schedules_person_matches_source_update;
+      DROP TRIGGER IF EXISTS income_schedules_person_matches_source_insert;
+      DROP INDEX IF EXISTS income_schedules_source_effective; DROP INDEX IF EXISTS income_sources_person;
+      DROP TABLE IF EXISTS income_schedules; DROP TABLE IF EXISTS income_sources;`,
+  },
+  {
+    id: "0014_income_forecast_reconciliation",
+    up: `
+      CREATE TABLE IF NOT EXISTS income_forecast_runs (
+        id TEXT PRIMARY KEY, household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+        start_month TEXT NOT NULL, months INTEGER NOT NULL CHECK(months BETWEEN 1 AND 600),
+        input_version TEXT NOT NULL, data_as_of TEXT NOT NULL, created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS income_forecast_rows (
+        id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES income_forecast_runs(id) ON DELETE CASCADE,
+        schedule_id TEXT NOT NULL REFERENCES income_schedules(id), source_id TEXT NOT NULL REFERENCES income_sources(id),
+        person_id TEXT NOT NULL REFERENCES people(id), month TEXT NOT NULL,
+        currency TEXT NOT NULL CHECK(currency GLOB '[A-Z][A-Z][A-Z]'),
+        expected_gross_amount_minor INTEGER NOT NULL, expected_net_amount_minor INTEGER,
+        low_gross_amount_minor INTEGER NOT NULL, low_net_amount_minor INTEGER,
+        high_gross_amount_minor INTEGER NOT NULL, high_net_amount_minor INTEGER,
+        warnings_json TEXT NOT NULL, created_at TEXT NOT NULL,
+        UNIQUE(run_id, schedule_id, month)
+      );
+      CREATE TABLE IF NOT EXISTS income_reconciliation_matches (
+        id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES income_forecast_runs(id) ON DELETE CASCADE,
+        forecast_row_id TEXT REFERENCES income_forecast_rows(id) ON DELETE CASCADE,
+        expected_gross_amount_minor INTEGER, expected_net_amount_minor INTEGER,
+        observed_net_amount_minor INTEGER, variance_minor INTEGER,
+        match_method TEXT NOT NULL CHECK(match_method IN ('inferred', 'unmatched_expected', 'unexplained_deposit', 'user_confirmed')),
+        confidence REAL NOT NULL CHECK(confidence >= 0 AND confidence <= 1),
+        review_state TEXT NOT NULL CHECK(review_state IN ('matched', 'needs_review', 'confirmed', 'unexplained')),
+        input_version TEXT NOT NULL, data_as_of TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        CHECK(forecast_row_id IS NOT NULL OR match_method = 'unexplained_deposit')
+      );
+      CREATE TABLE IF NOT EXISTS income_reconciliation_match_deposits (
+        match_id TEXT NOT NULL REFERENCES income_reconciliation_matches(id) ON DELETE CASCADE,
+        transaction_id TEXT NOT NULL UNIQUE REFERENCES transactions(id), observed_amount_minor INTEGER NOT NULL,
+        PRIMARY KEY(match_id, transaction_id)
+      );
+      CREATE INDEX IF NOT EXISTS income_forecast_runs_household ON income_forecast_runs(household_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS income_forecast_rows_run_month ON income_forecast_rows(run_id, month);
+      CREATE INDEX IF NOT EXISTS income_reconciliation_matches_run ON income_reconciliation_matches(run_id, review_state);
+    `,
+    down: `DROP INDEX IF EXISTS income_reconciliation_matches_run; DROP INDEX IF EXISTS income_forecast_rows_run_month;
+      DROP INDEX IF EXISTS income_forecast_runs_household; DROP TABLE IF EXISTS income_reconciliation_match_deposits;
+      DROP TABLE IF EXISTS income_reconciliation_matches; DROP TABLE IF EXISTS income_forecast_rows; DROP TABLE IF EXISTS income_forecast_runs;`,
+  },
 ] as const;
 
 export type AppDatabase = Readonly<{
