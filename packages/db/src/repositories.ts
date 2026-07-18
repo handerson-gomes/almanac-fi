@@ -50,6 +50,10 @@ import {
   createPlanningRepository,
   type PlanningRepository,
 } from "./planning.js";
+import {
+  createPlanningDashboardRepository,
+  type PlanningDashboardRepository,
+} from "./planning-dashboard.js";
 
 export type Page<T> = Readonly<{ items: readonly T[]; nextCursor?: string }>;
 export type PageRequest = Readonly<{
@@ -463,6 +467,7 @@ export interface UnitOfWork {
   readonly obligations: ObligationRepository;
   readonly providerConnections: ProviderConnectionRepository;
   readonly planning: PlanningRepository;
+  readonly planningDashboard: PlanningDashboardRepository;
   readonly sourceRecords: SourceRecordRepository;
   readonly transactions: TransactionRepository;
   readonly transferMatches: TransferMatchRepository;
@@ -1589,6 +1594,11 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
   const planning = createPlanningRepository(database, (input) => {
     auditEvents.append({ ...input, sourceRecordId: null });
   });
+  const planningDashboard = createPlanningDashboardRepository(
+    database,
+    financialState,
+    planning,
+  );
   return Object.freeze({
     accountImportReviews: institutionServices.accountImportReviews,
     allocationLedger,
@@ -1614,6 +1624,7 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
     obligations,
     providerConnections: institutionServices.providerConnections,
     planning,
+    planningDashboard,
     sourceRecords,
     transactions,
     transferMatches,

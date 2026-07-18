@@ -49,6 +49,7 @@ import {
   getHouseholds,
   getFinancialGoals,
   getFinancialState,
+  getPlanningDashboard,
   getScenarioAssumptions,
   getPeople,
   getTransaction,
@@ -1824,6 +1825,28 @@ function Planning(): React.JSX.Element {
   const [assumptionKey, setAssumptionKey] = useState("");
   const [assumptionValue, setAssumptionValue] = useState("");
   const today = new Date().toISOString().slice(0, 10);
+  const [periodStart, setPeriodStart] = useState(`${today.slice(0, 7)}-01`);
+  const [scenarioId, setScenarioId] = useState("");
+  const selectedScenarioId =
+    /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(scenarioId)
+      ? scenarioId
+      : "";
+  const dashboard = useQuery({
+    enabled: household !== undefined,
+    queryFn: () =>
+      getPlanningDashboard(household?.id ?? "", {
+        currency: household?.currency ?? "USD",
+        periodStart,
+        ...(selectedScenarioId ? { scenarioId: selectedScenarioId } : {}),
+      }),
+    queryKey: [
+      "planning-dashboard",
+      household?.id,
+      household?.currency,
+      periodStart,
+      selectedScenarioId,
+    ],
+  });
   const addGoal = useMutation({
     mutationFn: () =>
       createFinancialGoal(household?.id ?? "", {
@@ -1868,7 +1891,174 @@ function Planning(): React.JSX.Element {
     );
   return (
     <section aria-labelledby="planning-heading" className="page">
-      <h2 id="planning-heading">Planning assumptions</h2>
+      <h2 id="planning-heading">Planning dashboard</h2>
+      <p>
+        Current cash is shown separately from future allocations. All amounts
+        below use the selected period and the dashboard data-as-of timestamp.
+      </p>
+      <div className="planning-controls">
+        <label htmlFor="planning-period">Reconciliation month</label>
+        <input
+          id="planning-period"
+          onChange={(event) =>
+            setPeriodStart(
+              event.target.value ? `${event.target.value}-01` : periodStart,
+            )
+          }
+          type="month"
+          value={periodStart.slice(0, 7)}
+        />
+        <label htmlFor="planning-scenario">Scenario ID (optional)</label>
+        <input
+          id="planning-scenario"
+          onChange={(event) => setScenarioId(event.target.value)}
+          placeholder="Compare an existing hypothetical scenario"
+          value={scenarioId}
+        />
+      </div>
+      {dashboard.isPending ? (
+        <p role="status">Reconciling the selected plan…</p>
+      ) : null}
+      {dashboard.isError ? <p role="alert">{dashboard.error.message}</p> : null}
+      {dashboard.data ? (
+        <>
+          <section
+            aria-labelledby="planning-context-heading"
+            className="planning-panel"
+          >
+            <h3 id="planning-context-heading">Plan context</h3>
+            <p>
+              {dashboard.data.context.plan ? (
+                <>
+                  <strong>
+                    {dashboard.data.context.plan.mode === "scenario"
+                      ? "Hypothetical scenario"
+                      : "Active plan"}
+                    :
+                  </strong>{" "}
+                  {dashboard.data.context.plan.label}
+                </>
+              ) : (
+                "No active plan version"
+              )}
+              {" · "}
+              {dashboard.data.context.currency} ·{" "}
+              {dashboard.data.context.period.start}
+              {" – "}
+              {dashboard.data.context.period.end} · data as of{" "}
+              {dashboard.data.context.dataAsOf}
+            </p>
+            {dashboard.data.scenarioDifference ? (
+              <p className="scenario-banner">
+                Scenario difference:{" "}
+                {dashboard.data.scenarioDifference.changedInputCount} changed
+                inputs ·{" "}
+                {formatMinorUnits(
+                  dashboard.data.scenarioDifference.monthlyNetEffectMinor,
+                )}{" "}
+                monthly net effect
+              </p>
+            ) : null}
+          </section>
+          <dl
+            className="planning-metrics"
+            aria-label="Current and planned amounts"
+          >
+            <div>
+              <dt>Spendable today</dt>
+              <dd>
+                {formatMinorUnits(
+                  dashboard.data.currentFunds.spendableFundsMinor,
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>Current balance</dt>
+              <dd>
+                {formatMinorUnits(
+                  dashboard.data.currentFunds.currentBalanceMinor,
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>Expected net income</dt>
+              <dd>
+                {formatMinorUnits(dashboard.data.plan.expectedNetIncomeMinor)}
+              </dd>
+            </div>
+            <div>
+              <dt>Monthly surplus / shortfall</dt>
+              <dd>
+                {formatMinorUnits(dashboard.data.plan.monthlySurplusMinor)}
+              </dd>
+            </div>
+          </dl>
+          <section aria-labelledby="planned-claims-heading">
+            <h3 id="planned-claims-heading">Future cash claims</h3>
+            <dl className="transaction-detail-grid">
+              <dt>Gross income</dt>
+              <dd>{formatMinorUnits(dashboard.data.plan.grossIncomeMinor)}</dd>
+              <dt>Required obligations</dt>
+              <dd>
+                {formatMinorUnits(dashboard.data.plan.requiredObligationsMinor)}
+              </dd>
+              <dt>Recurring budgets</dt>
+              <dd>
+                {formatMinorUnits(dashboard.data.plan.recurringBudgetsMinor)}
+              </dd>
+              <dt>Goal funding</dt>
+              <dd>{formatMinorUnits(dashboard.data.plan.goalFundingMinor)}</dd>
+              <dt>Planned investments</dt>
+              <dd>
+                {formatMinorUnits(dashboard.data.plan.plannedInvestmentsMinor)}
+              </dd>
+            </dl>
+          </section>
+          <section aria-labelledby="reconciliation-heading">
+            <h3 id="reconciliation-heading">Planned versus actual</h3>
+            <div className="reconciliation-list">
+              {Object.values(dashboard.data.reconciliation).map((item) => (
+                <article
+                  className={`reconciliation-item ${item.status}`}
+                  key={item.label}
+                >
+                  <h4>{item.label}</h4>
+                  <p>
+                    Planned {formatMinorUnits(item.plannedMinor)} · actual{" "}
+                    {formatMinorUnits(item.actualMinor)} · variance{" "}
+                    {formatMinorUnits(item.varianceMinor)}
+                  </p>
+                  {item.unresolvedMatches > 0 ||
+                  item.lowConfidenceMatches > 0 ? (
+                    <p>
+                      {item.unresolvedMatches} unresolved ·{" "}
+                      {item.lowConfidenceMatches} low-confidence matches
+                    </p>
+                  ) : null}
+                  <p>Status: {item.status}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+          {dashboard.data.warnings.length > 0 ? (
+            <section
+              aria-label="Planning data-quality warnings"
+              className="planning-warnings"
+              role="alert"
+            >
+              <h3>Warnings and conflicts</h3>
+              <ul>
+                {dashboard.data.warnings.map((warning) => (
+                  <li key={`${warning.code}-${warning.message}`}>
+                    {warning.message}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+        </>
+      ) : null}
+      <h3>Planning assumptions</h3>
       <form
         className="stacked-form"
         onSubmit={(event) => {

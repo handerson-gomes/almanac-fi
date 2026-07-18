@@ -1563,6 +1563,72 @@ export const financialStateSchema = z.object({
 });
 export type FinancialState = z.infer<typeof financialStateSchema>;
 
+export const planningDashboardQuerySchema = z.object({
+  asOf: z.iso.datetime().optional(),
+  currency: currencySchema.default("USD"),
+  periodStart: z.iso.date().optional(),
+  scenarioId: entityIdSchema.optional(),
+});
+export const planningDashboardWarningSchema = z.object({
+  code: z.string().min(1),
+  message: z.string().min(1),
+  severity: z.enum(["warning", "error"]),
+});
+export const planningDashboardReconciliationSchema = z.object({
+  actualMinor: z.number().int().safe(),
+  label: z.string().min(1),
+  lowConfidenceMatches: z.number().int().nonnegative(),
+  plannedMinor: z.number().int().safe(),
+  status: z.enum(["reconciled", "variance", "unresolved"]),
+  unresolvedMatches: z.number().int().nonnegative(),
+  varianceMinor: z.number().int().safe(),
+});
+export const planningDashboardSchema = z.object({
+  context: z.object({
+    activePlanVersionId: entityIdSchema.nullable(),
+    currency: currencySchema,
+    dataAsOf: z.iso.datetime(),
+    period: z.object({ end: z.iso.date(), start: z.iso.date() }),
+    plan: z
+      .object({
+        id: entityIdSchema,
+        label: z.string().min(1),
+        mode: z.enum(["active", "scenario"]),
+        scenarioId: entityIdSchema.nullable(),
+      })
+      .nullable(),
+  }),
+  currentFunds: z.object({
+    currentBalanceMinor: z.number().int().safe(),
+    netWorthMinor: z.number().int().safe(),
+    spendableFundsMinor: z.number().int().safe(),
+  }),
+  plan: z.object({
+    expectedNetIncomeMinor: z.number().int().safe(),
+    goalFundingMinor: z.number().int().safe(),
+    grossIncomeMinor: z.number().int().safe(),
+    monthlySurplusMinor: z.number().int().safe(),
+    plannedInvestmentsMinor: z.number().int().safe(),
+    recurringBudgetsMinor: z.number().int().safe(),
+    requiredObligationsMinor: z.number().int().safe(),
+  }),
+  reconciliation: z.object({
+    balances: planningDashboardReconciliationSchema,
+    budgets: planningDashboardReconciliationSchema,
+    debts: planningDashboardReconciliationSchema,
+    goals: planningDashboardReconciliationSchema,
+    income: planningDashboardReconciliationSchema,
+  }),
+  scenarioDifference: z
+    .object({
+      changedInputCount: z.number().int().nonnegative(),
+      monthlyNetEffectMinor: z.number().int().safe(),
+    })
+    .nullable(),
+  warnings: z.array(planningDashboardWarningSchema),
+});
+export type PlanningDashboard = z.infer<typeof planningDashboardSchema>;
+
 export const budgetSchema = z.object({
   createdAt: z.iso.datetime(),
   currency: currencySchema,
@@ -1653,6 +1719,17 @@ export const openApiDocument = Object.freeze({
       get: {
         operationId: "getFinancialState",
         responses: { "200": { description: "Authoritative financial state" } },
+      },
+    },
+    "/households/{id}/planning-dashboard": {
+      get: {
+        operationId: "getPlanningDashboard",
+        responses: {
+          "200": {
+            description:
+              "Read-only active-plan or scenario dashboard and reconciliation",
+          },
+        },
       },
     },
     "/accounts": {

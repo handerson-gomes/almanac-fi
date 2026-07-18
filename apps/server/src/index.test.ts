@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 
 import { createDatabase } from "@almanac-fi/db";
+import { createUnitOfWork } from "@almanac-fi/db/repositories";
 
 import { createServer } from "./index.js";
 
@@ -41,6 +42,60 @@ test("errors are problem documents without stack traces", async () => {
   expect(response.body).not.toContain("stack");
 
   await app.close();
+  await rm(dataHome, { force: true, recursive: true });
+});
+
+test("serves a read-only planning dashboard with explicit reconciliation context", async () => {
+  const dataHome = await mkdtemp(join(tmpdir(), "almanac-fi-server-"));
+  const database = createDatabase();
+  const app = await createServer({
+    config: { dataHome, host: "127.0.0.1", logLevel: "error", port: 0 },
+    database,
+  });
+  const unitOfWork = createUnitOfWork(database);
+  const household = unitOfWork.households.create({
+    currency: "USD",
+    name: "Dashboard household",
+  });
+  unitOfWork.goals.create({
+    accountId: null,
+    constraintLevel: "soft",
+    currency: "USD",
+    dependentId: null,
+    fundingStrategy: "cash",
+    householdId: household.id,
+    name: "Emergency reserve",
+    priorityTier: "important",
+    status: "active",
+    targetAmountMinor: 120_000,
+    targetDate: "2027-07-01",
+  });
+  const active = unitOfWork.planning.ensureActiveVersion(household.id);
+
+  const response = await app.inject({
+    method: "GET",
+    url: `/households/${household.id}/planning-dashboard?currency=USD&periodStart=2026-07-01&asOf=2026-07-18T00%3A00%3A00.000Z`,
+  });
+
+  expect(response.statusCode).toBe(200);
+  expect(response.json()).toMatchObject({
+    context: {
+      activePlanVersionId: active.id,
+      currency: "USD",
+      dataAsOf: "2026-07-18T00:00:00.000Z",
+      period: { end: "2026-07-31", start: "2026-07-01" },
+      plan: { id: active.id, mode: "active" },
+    },
+    reconciliation: {
+      income: expect.objectContaining({ status: "unresolved" }),
+    },
+    warnings: expect.arrayContaining([
+      expect.objectContaining({ code: "missing_income_forecast" }),
+    ]),
+  });
+
+  await app.close();
+  database.close();
   await rm(dataHome, { force: true, recursive: true });
 });
 

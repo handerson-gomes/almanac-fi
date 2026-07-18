@@ -28,10 +28,12 @@ import {
   financialGoalListSchema,
   financialGoalSchema,
   financialStateSchema,
+  planningDashboardSchema,
   scenarioAssumptionListSchema,
   scenarioAssumptionSchema,
   type FinancialGoal,
   type FinancialState,
+  type PlanningDashboard,
   type ScenarioAssumption,
   personListSchema,
   personSchema,
@@ -92,6 +94,7 @@ export type {
   Person,
   FinancialGoal,
   FinancialState,
+  PlanningDashboard,
   ScenarioAssumption,
 };
 
@@ -114,6 +117,26 @@ export async function getFinancialState(
 ): Promise<FinancialState> {
   return financialStateSchema.parse(
     await requestJson(`/api/financial-state?currency=${currency}`),
+  );
+}
+
+export async function getPlanningDashboard(
+  householdId: string,
+  input: Readonly<{
+    currency: string;
+    periodStart: string;
+    scenarioId?: string;
+  }>,
+): Promise<PlanningDashboard> {
+  const query = new URLSearchParams({
+    currency: input.currency,
+    periodStart: input.periodStart,
+  });
+  if (input.scenarioId) query.set("scenarioId", input.scenarioId);
+  return planningDashboardSchema.parse(
+    await requestJson(
+      `/api/households/${householdId}/planning-dashboard?${query}`,
+    ),
   );
 }
 

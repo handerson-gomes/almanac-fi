@@ -397,6 +397,90 @@ fieldset button {
   padding: 0.75rem 1rem;
 }
 
+.planning-controls {
+  display: grid;
+  gap: 0.35rem;
+  grid-template-columns: minmax(9rem, max-content) minmax(12rem, 22rem);
+  margin: 1.25rem 0;
+}
+
+.planning-controls label {
+  align-self: center;
+  font-weight: 650;
+}
+
+.planning-panel {
+  background: #f8fafc;
+  border: 1px solid #d8dee8;
+  border-radius: 0.6rem;
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+}
+
+.planning-panel h3,
+.planning-warnings h3 {
+  margin-top: 0;
+}
+
+.scenario-banner {
+  background: #fff7ed;
+  border-left: 4px solid #f79009;
+  padding: 0.55rem 0.7rem;
+}
+
+.planning-metrics {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  margin: 1.25rem 0;
+}
+
+.planning-metrics > div,
+.reconciliation-item {
+  border: 1px solid #d8dee8;
+  border-radius: 0.6rem;
+  padding: 0.8rem;
+}
+
+.planning-metrics dt {
+  color: #475467;
+  font-weight: 650;
+}
+
+.planning-metrics dd {
+  font-size: 1.2rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+  margin: 0.2rem 0 0;
+}
+
+.reconciliation-list {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+}
+
+.reconciliation-item h4 {
+  margin: 0;
+}
+
+.reconciliation-item p {
+  margin-bottom: 0;
+}
+
+.reconciliation-item.unresolved {
+  border-color: #f79009;
+  background: #fffaf0;
+}
+
+.reconciliation-item.variance {
+  border-color: #84adff;
+}
+
+.planning-warnings {
+  margin-top: 1.25rem;
+}
+
 @media (max-width: 42rem) {
   .app-header {
     padding: 1rem;
@@ -411,6 +495,10 @@ fieldset button {
   }
 
   fieldset {
+    grid-template-columns: 1fr;
+  }
+
+  .planning-controls {
     grid-template-columns: 1fr;
   }
 

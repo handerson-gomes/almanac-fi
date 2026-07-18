@@ -67,6 +67,8 @@ import {
   externalInstitutionConnectionListSchema,
   financialStateQuerySchema,
   financialStateSchema,
+  planningDashboardQuerySchema,
+  planningDashboardSchema,
   healthResponseSchema,
   holdingListSchema,
   holdingSchema,
@@ -332,6 +334,28 @@ export async function createServer(
       asOf,
       currency: input.currency,
     });
+  });
+  app.get("/households/:id/planning-dashboard", async (request) => {
+    const householdId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    if (!unitOfWork.households.findById(householdId))
+      notFound("The household does not exist.");
+    const input = parseRequest(planningDashboardQuerySchema, request.query);
+    return planningDashboardSchema.parse(
+      unitOfWork.planningDashboard.get({
+        asOf: input.asOf ?? now(),
+        currency: input.currency,
+        householdId,
+        ...(input.periodStart === undefined
+          ? {}
+          : { periodStart: input.periodStart }),
+        ...(input.scenarioId === undefined
+          ? {}
+          : { scenarioId: input.scenarioId }),
+      }),
+    );
   });
   app.get("/accounts", async (request) => {
     const page = parseRequest(paginationQuerySchema, request.query);

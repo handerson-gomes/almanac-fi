@@ -106,6 +106,112 @@ test("renders the household profile creation state", async () => {
   expect(screen.getByLabelText("Household name")).toBeRequired();
 });
 
+test("renders planning reconciliation with an explicit active-plan context and warnings", async () => {
+  vi.stubGlobal("scrollTo", vi.fn());
+  const householdId = "11111111-1111-4111-8111-111111111111";
+  const planId = "22222222-2222-4222-8222-222222222222";
+  const timestamp = "2026-07-18T00:00:00.000Z";
+  const reconciliation = {
+    actualMinor: 90_000,
+    label: "Income occurrences",
+    lowConfidenceMatches: 1,
+    plannedMinor: 100_000,
+    status: "unresolved",
+    unresolvedMatches: 1,
+    varianceMinor: -10_000,
+  } as const;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: string | URL | Request) => {
+      const path = input.toString();
+      if (path === "/api/households")
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [
+                {
+                  createdAt: timestamp,
+                  currency: "USD",
+                  id: householdId,
+                  name: "Planning home",
+                  updatedAt: timestamp,
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+        );
+      if (path.includes(`/households/${householdId}/planning-dashboard?`))
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              context: {
+                activePlanVersionId: planId,
+                currency: "USD",
+                dataAsOf: timestamp,
+                period: { end: "2026-07-31", start: "2026-07-01" },
+                plan: {
+                  id: planId,
+                  label: "July plan",
+                  mode: "active",
+                  scenarioId: null,
+                },
+              },
+              currentFunds: {
+                currentBalanceMinor: 200_000,
+                netWorthMinor: 400_000,
+                spendableFundsMinor: 150_000,
+              },
+              plan: {
+                expectedNetIncomeMinor: 100_000,
+                goalFundingMinor: 10_000,
+                grossIncomeMinor: 125_000,
+                monthlySurplusMinor: 15_000,
+                plannedInvestmentsMinor: 5_000,
+                recurringBudgetsMinor: 50_000,
+                requiredObligationsMinor: 20_000,
+              },
+              reconciliation: {
+                balances: {
+                  ...reconciliation,
+                  label: "Forecast balance vs observed balance",
+                },
+                budgets: { ...reconciliation, label: "Budget spending" },
+                debts: { ...reconciliation, label: "Debt payments" },
+                goals: { ...reconciliation, label: "Goal contributions" },
+                income: reconciliation,
+              },
+              scenarioDifference: null,
+              warnings: [
+                {
+                  code: "missing_income_forecast",
+                  message: "No immutable income forecast run is available.",
+                  severity: "warning",
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+        );
+      return Promise.resolve(
+        new Response(JSON.stringify({ items: [] }), { status: 200 }),
+      );
+    }),
+  );
+  await appRouter.navigate({ to: "/planning" });
+  await appRouter.load();
+  render(<App />);
+
+  expect(
+    await screen.findByRole("heading", { name: "Planning dashboard" }),
+  ).toBeInTheDocument();
+  expect(await screen.findByText("Income occurrences")).toBeInTheDocument();
+  expect(screen.getByText(/Active plan:/)).toBeInTheDocument();
+  expect(
+    screen.getByRole("alert", { name: "Planning data-quality warnings" }),
+  ).toHaveTextContent("No immutable income forecast run is available.");
+});
+
 test("renders budget fixture totals, variance, comparison, and data-quality warnings", async () => {
   vi.stubGlobal("scrollTo", vi.fn());
   const budgetId = "11111111-1111-4111-8111-111111111111";

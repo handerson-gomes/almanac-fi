@@ -49,6 +49,10 @@
       "types": "./dist/planning.d.ts",
       "import": "./dist/planning.js"
     },
+    "./planning-dashboard": {
+      "types": "./dist/planning-dashboard.d.ts",
+      "import": "./dist/planning-dashboard.js"
+    },
     "./budgets": {
       "types": "./dist/budgets.d.ts",
       "import": "./dist/budgets.js"

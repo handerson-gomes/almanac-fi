@@ -4,6 +4,75 @@ import { createDatabase } from "./index.js";
 import { createUnitOfWork } from "./repositories.js";
 
 describe("active plan versions and scenarios", () => {
+  test("projects a read-only dashboard with explicit scenario context", () => {
+    const database = createDatabase();
+    database.migrate();
+    const unitOfWork = createUnitOfWork(database);
+    const household = unitOfWork.households.create({
+      currency: "USD",
+      name: "Dashboard household",
+    });
+    const goal = unitOfWork.goals.create({
+      accountId: null,
+      constraintLevel: "soft",
+      currency: "USD",
+      dependentId: null,
+      fundingStrategy: "cash",
+      householdId: household.id,
+      name: "Emergency reserve",
+      priorityTier: "important",
+      status: "active",
+      targetAmountMinor: 120_000,
+      targetDate: "2027-07-01",
+    });
+    const active = unitOfWork.planning.ensureActiveVersion(household.id);
+    const scenario = unitOfWork.planning.createScenario(household.id, {
+      name: "Accelerated reserve",
+    });
+    unitOfWork.planning.setOverride(scenario.id, {
+      inputId: goal.id,
+      inputType: "goal",
+      patch: { targetAmountMinor: 240_000 },
+    });
+    const before = database.sqlite
+      .prepare("SELECT COUNT(*) AS count FROM plan_versions")
+      .get() as { count: number };
+
+    const dashboard = unitOfWork.planningDashboard.get({
+      asOf: "2026-07-18T00:00:00.000Z",
+      currency: "USD",
+      householdId: household.id,
+      periodStart: "2026-07-01",
+      scenarioId: scenario.id,
+    });
+
+    expect(dashboard.context).toMatchObject({
+      activePlanVersionId: active.id,
+      period: { end: "2026-07-31", start: "2026-07-01" },
+      plan: {
+        id: active.id,
+        mode: "scenario",
+        scenarioId: scenario.id,
+      },
+    });
+    expect(dashboard.scenarioDifference).toMatchObject({
+      changedInputCount: 1,
+    });
+    expect(dashboard.reconciliation.goals.status).toBe("unresolved");
+    expect(dashboard.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "missing_income_forecast" }),
+        expect.objectContaining({ code: "missing_allocation_ledger" }),
+      ]),
+    );
+    expect(
+      database.sqlite
+        .prepare("SELECT COUNT(*) AS count FROM plan_versions")
+        .get(),
+    ).toEqual(before);
+    database.close();
+  });
+
   test("isolates typed overrides, rejects stale applies, and rolls back by creating a version", () => {
     const database = createDatabase();
     database.migrate();

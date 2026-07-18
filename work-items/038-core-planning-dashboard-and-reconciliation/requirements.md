@@ -24,4 +24,4 @@ Run UI and API integration fixtures for fixed and variable income, multi-account
 
 ## Status
 
-Not started
+Completed
