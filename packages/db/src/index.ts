@@ -511,6 +511,44 @@ const migrations = [
     down: `DROP INDEX IF EXISTS funding_allocation_rules_resolution; DROP INDEX IF EXISTS funding_buckets_household;
       DROP TABLE IF EXISTS funding_allocation_rules; DROP TABLE IF EXISTS funding_buckets;`,
   },
+  {
+    id: "0016_shared_allocation_ledger",
+    up: `
+      CREATE TABLE IF NOT EXISTS allocation_ledger_runs (
+        id TEXT PRIMARY KEY, household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+        income_forecast_run_id TEXT NOT NULL REFERENCES income_forecast_runs(id), currency TEXT NOT NULL CHECK(currency GLOB '[A-Z][A-Z][A-Z]'),
+        opening_as_of TEXT NOT NULL, data_as_of TEXT NOT NULL, input_version TEXT NOT NULL, created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS allocation_ledger_months (
+        id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES allocation_ledger_runs(id) ON DELETE CASCADE,
+        month TEXT NOT NULL, opening_balance_minor INTEGER NOT NULL, gross_income_minor INTEGER NOT NULL,
+        expected_net_income_minor INTEGER NOT NULL, missing_income_count INTEGER NOT NULL,
+        obligation_requested_minor INTEGER NOT NULL, obligation_allocated_minor INTEGER NOT NULL,
+        allocation_requested_minor INTEGER NOT NULL, allocation_allocated_minor INTEGER NOT NULL,
+        closing_balance_minor INTEGER NOT NULL, surplus_minor INTEGER NOT NULL, shortfall_minor INTEGER NOT NULL,
+        input_version TEXT NOT NULL, data_as_of TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(run_id, month)
+      );
+      CREATE TABLE IF NOT EXISTS allocation_ledger_entries (
+        id TEXT PRIMARY KEY, ledger_month_id TEXT NOT NULL REFERENCES allocation_ledger_months(id) ON DELETE CASCADE,
+        entry_type TEXT NOT NULL CHECK(entry_type IN ('income', 'obligation', 'allocation', 'shortfall', 'closing_balance')),
+        source_id TEXT, source_rule_id TEXT REFERENCES funding_allocation_rules(id), destination_type TEXT,
+        destination_id TEXT, allocation_basis TEXT CHECK(allocation_basis IN ('gross_income', 'expected_net_income', 'remaining_cash')),
+        requested_amount_minor INTEGER NOT NULL, allocated_amount_minor INTEGER NOT NULL,
+        gross_amount_minor INTEGER, expected_net_amount_minor INTEGER,
+        priority INTEGER, constraint_level TEXT CHECK(constraint_level IN ('hard', 'minimum', 'preferred', 'flexible', 'residual')),
+        funding_status TEXT NOT NULL CHECK(funding_status IN ('funded', 'partial', 'unfunded', 'surplus', 'shortfall', 'missing_input')),
+        opening_balance_minor INTEGER NOT NULL, closing_balance_minor INTEGER NOT NULL,
+        input_version TEXT NOT NULL, data_as_of TEXT NOT NULL, created_at TEXT NOT NULL,
+        UNIQUE(ledger_month_id, entry_type, source_id, source_rule_id)
+      );
+      CREATE INDEX IF NOT EXISTS allocation_ledger_runs_household ON allocation_ledger_runs(household_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS allocation_ledger_months_run ON allocation_ledger_months(run_id, month);
+      CREATE INDEX IF NOT EXISTS allocation_ledger_entries_month ON allocation_ledger_entries(ledger_month_id, priority, id);
+    `,
+    down: `DROP INDEX IF EXISTS allocation_ledger_entries_month; DROP INDEX IF EXISTS allocation_ledger_months_run;
+      DROP INDEX IF EXISTS allocation_ledger_runs_household; DROP TABLE IF EXISTS allocation_ledger_entries;
+      DROP TABLE IF EXISTS allocation_ledger_months; DROP TABLE IF EXISTS allocation_ledger_runs;`,
+  },
 ] as const;
 
 export type AppDatabase = Readonly<{

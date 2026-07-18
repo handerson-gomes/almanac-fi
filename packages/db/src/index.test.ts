@@ -1551,6 +1551,217 @@ describe("SQLite foundation", () => {
     database.close();
   });
 
+  test("materializes a deterministic shared allocation ledger with explicit shortfalls", () => {
+    const database = createDatabase();
+    database.migrate();
+    const unitOfWork = createUnitOfWork(database);
+    const household = unitOfWork.households.create({
+      currency: "USD",
+      name: "Ledger household",
+    });
+    const person = unitOfWork.households.createPerson({
+      birthDate: null,
+      dependent: false,
+      dependentUntil: null,
+      householdId: household.id,
+      name: "Avery",
+      relationship: "self",
+    });
+    const incomeSource = unitOfWork.income.createSource({
+      kind: "w2",
+      name: "Salary",
+      personId: person.id,
+    });
+    unitOfWork.income.createSchedule({
+      annualGrowthBps: 0,
+      behavior: "fixed",
+      cadence: "monthly",
+      confidence: 1,
+      currency: "USD",
+      deductionAmountMinor: null,
+      effectiveFrom: "2026-07-01",
+      effectiveTo: null,
+      expectedNetAmountMinor: 100_000,
+      grossAmountMinor: 125_000,
+      grossIncomeBasis: "gross",
+      highGrossAmountMinor: null,
+      lowGrossAmountMinor: null,
+      source: "paystub",
+      sourceId: incomeSource.id,
+      verifiedAt: null,
+      verifiedBy: null,
+      withholdingRateBps: null,
+    });
+    const incomeRun = unitOfWork.incomeReconciliation.run(household.id, {
+      dataAsOf: "2026-08-31",
+      months: 2,
+      startMonth: "2026-07-01",
+    });
+    const institution = createTestInstitution(unitOfWork, "Ledger Bank");
+    const checking = unitOfWork.accounts.create({
+      accountType: "checking",
+      currency: "USD",
+      externalConnectionId: null,
+      externalId: null,
+      institutionId: institution.id,
+      name: "Checking",
+      status: "active",
+    });
+    unitOfWork.accounts.addBalance({
+      accountId: checking.id,
+      amountMinor: 50_000,
+      asOf: "2026-06-30T00:00:00.000Z",
+      availableAmountMinor: 50_000,
+    });
+    unitOfWork.obligations.createObligation({
+      amountMinor: 20_000,
+      cadence: "monthly",
+      confidence: 1,
+      currency: "USD",
+      effectiveFrom: "2026-07-01",
+      effectiveTo: null,
+      householdId: household.id,
+      liabilityId: null,
+      name: "Rent",
+      paymentDay: 1,
+      source: "lease",
+    });
+    const debt = unitOfWork.obligations.createLiability({
+      accountId: null,
+      confidence: 1,
+      currency: "USD",
+      householdId: household.id,
+      name: "Loan",
+      source: "statement",
+    });
+    unitOfWork.obligations.addTerms({
+      annualRateBps: null,
+      balanceMinor: 500_000,
+      effectiveFrom: "2026-08-01",
+      effectiveTo: null,
+      liabilityId: debt.id,
+      minimumPaymentMinor: 120_000,
+      paymentDay: 1,
+    });
+    const goal = unitOfWork.goals.create({
+      accountId: null,
+      constraintLevel: "soft",
+      currency: "USD",
+      dependentId: null,
+      fundingStrategy: "cash",
+      householdId: household.id,
+      name: "Emergency fund",
+      priorityTier: "essential",
+      status: "active",
+      targetAmountMinor: 1_000_000,
+      targetDate: "2028-01-01",
+    });
+    const goalBucket = unitOfWork.funding.createBucket({
+      budgetId: null,
+      categoryId: null,
+      currency: "USD",
+      currencyPolicy: "household_currency",
+      destinationAccountId: null,
+      destinationType: "goal",
+      goalId: goal.id,
+      householdId: household.id,
+      name: "Emergency fund",
+      reserveName: null,
+    });
+    const bufferBucket = unitOfWork.funding.createBucket({
+      budgetId: null,
+      categoryId: null,
+      currency: "USD",
+      currencyPolicy: "household_currency",
+      destinationAccountId: null,
+      destinationType: "unallocated_buffer",
+      goalId: null,
+      householdId: household.id,
+      name: "Unallocated",
+      reserveName: null,
+    });
+    unitOfWork.funding.createRule({
+      amountType: "fixed",
+      bucketId: goalBucket.id,
+      cadence: "monthly",
+      constraintLevel: "hard",
+      currencyPolicy: "household_currency",
+      effectiveFrom: "2026-07-01",
+      effectiveTo: null,
+      fixedAmountMinor: 50_000,
+      maximumAmountMinor: null,
+      minimumAmountMinor: null,
+      percentageBasis: null,
+      percentageBps: null,
+      priority: 1,
+      sourceAccountId: checking.id,
+    });
+    unitOfWork.funding.createRule({
+      amountType: "percentage",
+      bucketId: bufferBucket.id,
+      cadence: "monthly",
+      constraintLevel: "residual",
+      currencyPolicy: "household_currency",
+      effectiveFrom: "2026-07-01",
+      effectiveTo: null,
+      fixedAmountMinor: null,
+      maximumAmountMinor: null,
+      minimumAmountMinor: null,
+      percentageBasis: "remaining_cash",
+      percentageBps: 10_000,
+      priority: 99,
+      sourceAccountId: checking.id,
+    });
+    const ledger = unitOfWork.allocationLedger.create(household.id, {
+      currency: "USD",
+      incomeForecastRunId: incomeRun.run.id,
+      openingAsOf: "2026-06-30T00:00:00.000Z",
+    });
+    expect(ledger.months).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          allocationAllocatedMinor: 130_000,
+          closingBalanceMinor: 0,
+          month: "2026-07-01",
+          obligationAllocatedMinor: 20_000,
+          shortfallMinor: 0,
+        }),
+        expect.objectContaining({
+          closingBalanceMinor: 0,
+          month: "2026-08-01",
+          obligationRequestedMinor: 140_000,
+          shortfallMinor: 90_000,
+        }),
+      ]),
+    );
+    expect(ledger.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entryType: "income",
+          grossAmountMinor: 125_000,
+          expectedNetAmountMinor: 100_000,
+        }),
+        expect.objectContaining({
+          entryType: "shortfall",
+          fundingStatus: "shortfall",
+          requestedAmountMinor: 20_000,
+        }),
+        expect.objectContaining({
+          constraintLevel: "hard",
+          entryType: "allocation",
+          requestedAmountMinor: 50_000,
+        }),
+      ]),
+    );
+    const nextMonth = unitOfWork.allocationLedger.get(ledger.run.id, 1);
+    expect(nextMonth?.months).toHaveLength(1);
+    expect(nextMonth?.run.inputVersion).toBe(ledger.run.inputVersion);
+    expect(
+      unitOfWork.allocationLedger.get(ledger.run.id)?.entries,
+    ).toHaveLength(ledger.entries.length);
+    database.close();
+  });
+
   test("manages and deterministically clones audited budget targets", () => {
     const database = createDatabase();
     database.migrate();

@@ -490,6 +490,63 @@ export const fundingAllocationRules = sqliteTable("funding_allocation_rules", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const allocationLedgerRuns = sqliteTable("allocation_ledger_runs", {
+  createdAt: text("created_at").notNull(),
+  currency: text("currency").notNull(),
+  dataAsOf: text("data_as_of").notNull(),
+  householdId: text("household_id").notNull(),
+  id: text("id").primaryKey(),
+  incomeForecastRunId: text("income_forecast_run_id").notNull(),
+  inputVersion: text("input_version").notNull(),
+  openingAsOf: text("opening_as_of").notNull(),
+});
+
+export const allocationLedgerMonths = sqliteTable("allocation_ledger_months", {
+  allocationAllocatedMinor: integer("allocation_allocated_minor").notNull(),
+  allocationRequestedMinor: integer("allocation_requested_minor").notNull(),
+  closingBalanceMinor: integer("closing_balance_minor").notNull(),
+  createdAt: text("created_at").notNull(),
+  dataAsOf: text("data_as_of").notNull(),
+  expectedNetIncomeMinor: integer("expected_net_income_minor").notNull(),
+  grossIncomeMinor: integer("gross_income_minor").notNull(),
+  id: text("id").primaryKey(),
+  inputVersion: text("input_version").notNull(),
+  ledgerRunId: text("run_id").notNull(),
+  missingIncomeCount: integer("missing_income_count").notNull(),
+  month: text("month").notNull(),
+  obligationAllocatedMinor: integer("obligation_allocated_minor").notNull(),
+  obligationRequestedMinor: integer("obligation_requested_minor").notNull(),
+  openingBalanceMinor: integer("opening_balance_minor").notNull(),
+  shortfallMinor: integer("shortfall_minor").notNull(),
+  surplusMinor: integer("surplus_minor").notNull(),
+});
+
+export const allocationLedgerEntries = sqliteTable(
+  "allocation_ledger_entries",
+  {
+    allocatedAmountMinor: integer("allocated_amount_minor").notNull(),
+    allocationBasis: text("allocation_basis"),
+    closingBalanceMinor: integer("closing_balance_minor").notNull(),
+    constraintLevel: text("constraint_level"),
+    createdAt: text("created_at").notNull(),
+    dataAsOf: text("data_as_of").notNull(),
+    destinationId: text("destination_id"),
+    destinationType: text("destination_type"),
+    entryType: text("entry_type").notNull(),
+    expectedNetAmountMinor: integer("expected_net_amount_minor"),
+    fundingStatus: text("funding_status").notNull(),
+    grossAmountMinor: integer("gross_amount_minor"),
+    id: text("id").primaryKey(),
+    inputVersion: text("input_version").notNull(),
+    ledgerMonthId: text("ledger_month_id").notNull(),
+    openingBalanceMinor: integer("opening_balance_minor").notNull(),
+    priority: integer("priority"),
+    requestedAmountMinor: integer("requested_amount_minor").notNull(),
+    sourceId: text("source_id"),
+    sourceRuleId: text("source_rule_id"),
+  },
+);
+
 export const csvMappings = sqliteTable("csv_mappings", {
   createdAt: text("created_at").notNull(),
   id: text("id").primaryKey(),

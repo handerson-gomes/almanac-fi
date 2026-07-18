@@ -1390,6 +1390,85 @@ export const createFundingAllocationRuleSchema =
 export const fundingAllocationRuleListSchema = z.object({
   items: z.array(fundingAllocationRuleSchema),
 });
+export const allocationLedgerRunSchema = z.object({
+  createdAt: z.iso.datetime(),
+  currency: currencySchema,
+  dataAsOf: z.iso.date(),
+  householdId: entityIdSchema,
+  id: entityIdSchema,
+  incomeForecastRunId: entityIdSchema,
+  inputVersion: z.string().regex(/^[a-f0-9]{64}$/),
+  openingAsOf: z.iso.datetime(),
+});
+export const createAllocationLedgerRunSchema = z.object({
+  currency: currencySchema,
+  incomeForecastRunId: entityIdSchema,
+  openingAsOf: z.iso.datetime(),
+});
+export const allocationLedgerMonthSchema = z.object({
+  allocationAllocatedMinor: z.number().int().safe(),
+  allocationRequestedMinor: z.number().int().safe(),
+  closingBalanceMinor: z.number().int().safe(),
+  createdAt: z.iso.datetime(),
+  dataAsOf: z.iso.date(),
+  expectedNetIncomeMinor: z.number().int().safe(),
+  grossIncomeMinor: z.number().int().safe(),
+  id: entityIdSchema,
+  inputVersion: z.string().regex(/^[a-f0-9]{64}$/),
+  ledgerRunId: entityIdSchema,
+  missingIncomeCount: z.number().int().nonnegative(),
+  month: z.iso.date(),
+  obligationAllocatedMinor: z.number().int().safe(),
+  obligationRequestedMinor: z.number().int().safe(),
+  openingBalanceMinor: z.number().int().safe(),
+  shortfallMinor: z.number().int().nonnegative(),
+  surplusMinor: z.number().int().nonnegative(),
+});
+export const allocationLedgerEntrySchema = z.object({
+  allocatedAmountMinor: z.number().int().safe(),
+  allocationBasis: allocationPercentageBasisSchema.nullable(),
+  closingBalanceMinor: z.number().int().safe(),
+  constraintLevel: allocationConstraintLevelSchema.nullable(),
+  createdAt: z.iso.datetime(),
+  dataAsOf: z.iso.date(),
+  destinationId: z.string().nullable(),
+  destinationType: z.string().nullable(),
+  entryType: z.enum([
+    "income",
+    "obligation",
+    "allocation",
+    "shortfall",
+    "closing_balance",
+  ]),
+  expectedNetAmountMinor: z.number().int().safe().nullable(),
+  fundingStatus: z.enum([
+    "funded",
+    "partial",
+    "unfunded",
+    "surplus",
+    "shortfall",
+    "missing_input",
+  ]),
+  grossAmountMinor: z.number().int().safe().nullable(),
+  id: entityIdSchema,
+  inputVersion: z.string().regex(/^[a-f0-9]{64}$/),
+  ledgerMonthId: entityIdSchema,
+  openingBalanceMinor: z.number().int().safe(),
+  priority: z.number().int().nullable(),
+  requestedAmountMinor: z.number().int().safe(),
+  sourceId: z.string().nullable(),
+  sourceRuleId: entityIdSchema.nullable(),
+});
+export const allocationLedgerResultSchema = z.object({
+  entries: z.array(allocationLedgerEntrySchema),
+  months: z.array(allocationLedgerMonthSchema),
+  run: allocationLedgerRunSchema,
+});
+export const allocationLedgerHorizonQuerySchema = z.object({
+  horizon: z
+    .enum(["next_month", "six_month", "one_year", "five_year"])
+    .optional(),
+});
 export const forecastObligationListSchema = z.object({
   items: z.array(
     z.object({
@@ -1690,6 +1769,24 @@ export const openApiDocument = Object.freeze({
       post: {
         operationId: "createFundingAllocationRule",
         responses: { "201": { description: "Allocation rule created" } },
+      },
+    },
+    "/households/{id}/allocation-ledger-runs": {
+      post: {
+        operationId: "createAllocationLedgerRun",
+        responses: {
+          "201": {
+            description: "Immutable monthly cash-flow allocation ledger",
+          },
+        },
+      },
+    },
+    "/allocation-ledger-runs/{id}": {
+      get: {
+        operationId: "getAllocationLedgerRun",
+        responses: {
+          "200": { description: "Allocation ledger for a horizon" },
+        },
       },
     },
     "/institutions": {

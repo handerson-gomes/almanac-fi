@@ -41,6 +41,10 @@
       "types": "./dist/funding.d.ts",
       "import": "./dist/funding.js"
     },
+    "./allocation-ledger": {
+      "types": "./dist/allocation-ledger.d.ts",
+      "import": "./dist/allocation-ledger.js"
+    },
     "./budgets": {
       "types": "./dist/budgets.d.ts",
       "import": "./dist/budgets.js"

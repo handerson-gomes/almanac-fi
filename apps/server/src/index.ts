@@ -46,6 +46,7 @@ import {
   createIncomeForecastRunSchema,
   createFundingAllocationRuleSchema,
   createFundingBucketSchema,
+  createAllocationLedgerRunSchema,
   createIncomeScheduleSchema,
   createIncomeSourceSchema,
   createInvestmentTransactionSchema,
@@ -98,6 +99,8 @@ import {
   fundingAllocationRuleSchema,
   fundingBucketListSchema,
   fundingBucketSchema,
+  allocationLedgerHorizonQuerySchema,
+  allocationLedgerResultSchema,
   investmentTransactionListSchema,
   investmentTransactionSchema,
   investmentValuationSchema,
@@ -1533,6 +1536,50 @@ export async function createServer(
       if (error instanceof Error) badRequest(error.message);
       throw error;
     }
+  });
+  app.post("/households/:id/allocation-ledger-runs", async (request, reply) => {
+    const householdId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    try {
+      return reply
+        .status(201)
+        .send(
+          allocationLedgerResultSchema.parse(
+            unitOfWork.allocationLedger.create(
+              householdId,
+              parseRequest(createAllocationLedgerRunSchema, request.body),
+            ),
+          ),
+        );
+    } catch (error) {
+      if (error instanceof Error) badRequest(error.message);
+      throw error;
+    }
+  });
+  app.get("/allocation-ledger-runs/:id", async (request) => {
+    const runId = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const { horizon } = parseRequest(
+      allocationLedgerHorizonQuerySchema,
+      request.query,
+    );
+    const horizonMonths =
+      horizon === "next_month"
+        ? 1
+        : horizon === "six_month"
+          ? 6
+          : horizon === "one_year"
+            ? 12
+            : horizon === "five_year"
+              ? 60
+              : undefined;
+    const result = unitOfWork.allocationLedger.get(runId, horizonMonths);
+    if (result === undefined) notFound("Allocation ledger run was not found.");
+    return allocationLedgerResultSchema.parse(result);
   });
   app.post("/liabilities/:id/scenario-overrides", async (request, reply) => {
     const liabilityId = parseRequest(

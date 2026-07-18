@@ -598,6 +598,26 @@ test("manages person-linked income schedules and their monthly forecast", async 
     url: `/income-forecast-runs/${run.run.id}?horizon=next_month`,
   });
   expect(nextMonth.json().rows).toHaveLength(1);
+  const ledgerResponse = await app.inject({
+    method: "POST",
+    payload: {
+      currency: "USD",
+      incomeForecastRunId: run.run.id,
+      openingAsOf: "2026-06-30T00:00:00.000Z",
+    },
+    url: `/households/${household.id}/allocation-ledger-runs`,
+  });
+  expect(ledgerResponse.statusCode).toBe(201);
+  const ledger = ledgerResponse.json();
+  expect(ledger.months).toHaveLength(12);
+  expect(
+    (
+      await app.inject({
+        method: "GET",
+        url: `/allocation-ledger-runs/${ledger.run.id}?horizon=next_month`,
+      })
+    ).json().months,
+  ).toHaveLength(1);
   await app.close();
   await rm(dataHome, { force: true, recursive: true });
 });

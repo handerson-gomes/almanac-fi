@@ -42,6 +42,10 @@ import {
   type IncomeReconciliationRepository,
 } from "./income-reconciliation.js";
 import { createFundingRepository, type FundingRepository } from "./funding.js";
+import {
+  createAllocationLedgerRepository,
+  type AllocationLedgerRepository,
+} from "./allocation-ledger.js";
 
 export type Page<T> = Readonly<{ items: readonly T[]; nextCursor?: string }>;
 export type PageRequest = Readonly<{
@@ -432,6 +436,7 @@ export interface IncomeClassificationRepository {
 }
 
 export interface UnitOfWork {
+  readonly allocationLedger: AllocationLedgerRepository;
   readonly budgets: BudgetRepository;
   readonly accounts: AccountRepository;
   readonly auditEvents: AuditEventRepository;
@@ -1566,11 +1571,19 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
   const funding = createFundingRepository(database, (input) => {
     auditEvents.append({ ...input, sourceRecordId: null });
   });
+  const allocationLedger = createAllocationLedgerRepository(
+    database,
+    financialState,
+    (input) => {
+      auditEvents.append({ ...input, sourceRecordId: null });
+    },
+  );
   const budgets = createBudgetRepository(database, (input) => {
     auditEvents.append({ ...input, sourceRecordId: null });
   });
   return Object.freeze({
     accountImportReviews: institutionServices.accountImportReviews,
+    allocationLedger,
     accounts,
     budgets,
     auditEvents,
