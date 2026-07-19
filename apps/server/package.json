@@ -26,6 +26,7 @@
     "@almanac-fi/config": "workspace:*",
     "@almanac-fi/core": "workspace:*",
     "@almanac-fi/db": "workspace:*",
+    "@almanac-fi/secrets": "workspace:*",
     "@almanac-fi/telemetry": "workspace:*",
     "fastify": "^5.10.0"
   }

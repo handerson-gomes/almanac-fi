@@ -100,6 +100,9 @@ importers:
       "@almanac-fi/db":
         specifier: workspace:*
         version: link:../../packages/db
+      "@almanac-fi/secrets":
+        specifier: workspace:*
+        version: link:../../packages/secrets
       "@almanac-fi/telemetry":
         specifier: workspace:*
         version: link:../../packages/telemetry

@@ -87,6 +87,60 @@ test("renders institution management and provider-neutral import review", async 
   ).toBeInTheDocument();
 });
 
+test("connects SimpleFIN without returning or retaining the setup token", async () => {
+  vi.stubGlobal("scrollTo", vi.fn());
+  const timestamp = "2026-07-18T00:00:00.000Z";
+  const connection = {
+    createdAt: timestamp,
+    id: "11111111-1111-4111-8111-111111111111",
+    provider: "simplefin",
+    providerNamespace: "https://bridge.simplefin.org/simplefin",
+    secretKey: "simplefin-11111111-1111-4111-8111-111111111111",
+    status: "connected",
+    updatedAt: timestamp,
+  };
+  const fetchMock = vi.fn(
+    (input: string | URL | Request, init?: RequestInit) => {
+      const path = input.toString();
+      if (path === "/api/simplefin/connections" && init?.method === "POST") {
+        return Promise.resolve(
+          new Response(JSON.stringify(connection), { status: 201 }),
+        );
+      }
+      if (path === "/api/provider-connections") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ items: [connection] }), {
+            status: 200,
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ items: [] }), { status: 200 }),
+      );
+    },
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  await appRouter.navigate({ to: "/connections" });
+  await appRouter.load();
+  render(<App />);
+
+  const tokenInput = screen.getByLabelText("SimpleFIN setup token");
+  fireEvent.change(tokenInput, { target: { value: "one-time-token" } });
+  fireEvent.click(screen.getByRole("button", { name: "Connect SimpleFIN" }));
+
+  expect(await screen.findByRole("status")).toHaveTextContent(
+    "SimpleFIN is connected.",
+  );
+  expect(tokenInput).toHaveValue("");
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/simplefin/connections",
+    expect.objectContaining({
+      body: JSON.stringify({ setupToken: "one-time-token" }),
+      method: "POST",
+    }),
+  );
+});
+
 test("renders the household profile creation state", async () => {
   vi.stubGlobal("scrollTo", vi.fn());
   vi.stubGlobal(

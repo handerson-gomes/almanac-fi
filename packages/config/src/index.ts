@@ -6,8 +6,14 @@ import { dirname, join, resolve } from "node:path";
 import { parse } from "dotenv";
 import { z } from "zod";
 
+const optionalEnvironmentValue = z.preprocess(
+  (value) =>
+    typeof value === "string" && value.trim() === "" ? undefined : value,
+  z.string().trim().min(1).optional(),
+);
+
 const environmentSchema = z.object({
-  ALMANAC_FI_DATA_HOME: z.string().trim().min(1).optional(),
+  ALMANAC_FI_DATA_HOME: optionalEnvironmentValue,
   ALMANAC_FI_HOST: z
     .string()
     .regex(/^\d{1,3}(?:\.\d{1,3}){3}$/, "Host must be an IPv4 address")
@@ -16,6 +22,7 @@ const environmentSchema = z.object({
     .enum(["debug", "info", "warn", "error"])
     .default("info"),
   ALMANAC_FI_PORT: z.coerce.number().int().min(1).max(65_535).default(4310),
+  SIMPLE_FIN_TOKEN: optionalEnvironmentValue,
 });
 
 export type AppConfig = Readonly<{
@@ -23,6 +30,7 @@ export type AppConfig = Readonly<{
   host: string;
   logLevel: "debug" | "info" | "warn" | "error";
   port: number;
+  simpleFinSetupToken?: string;
 }>;
 
 export type ConfigOptions = Readonly<{
@@ -49,11 +57,28 @@ function defaultDataHome(env: NodeJS.ProcessEnv): string {
   );
 }
 
+function findEnvironmentFile(startDirectory: string): string {
+  let directory = resolve(startDirectory);
+  while (true) {
+    const candidate = join(directory, ".env");
+    if (existsSync(candidate)) return candidate;
+    if (
+      existsSync(join(directory, "pnpm-workspace.yaml")) ||
+      existsSync(join(directory, ".git"))
+    ) {
+      return candidate;
+    }
+    const parent = dirname(directory);
+    if (parent === directory) return candidate;
+    directory = parent;
+  }
+}
+
 function parseEnvironment(
   options: ConfigOptions,
 ): z.infer<typeof environmentSchema> {
   const env = options.env ?? process.env;
-  const envFilePath = join(options.cwd ?? process.cwd(), ".env");
+  const envFilePath = findEnvironmentFile(options.cwd ?? process.cwd());
   const fromFile = options.envFileContents
     ? parse(options.envFileContents)
     : existsSync(envFilePath)
@@ -80,6 +105,9 @@ export function loadConfig(options: ConfigOptions = {}): AppConfig {
     host: values.ALMANAC_FI_HOST,
     logLevel: values.ALMANAC_FI_LOG_LEVEL,
     port: values.ALMANAC_FI_PORT,
+    ...(values.SIMPLE_FIN_TOKEN === undefined
+      ? {}
+      : { simpleFinSetupToken: values.SIMPLE_FIN_TOKEN }),
   });
 }
 

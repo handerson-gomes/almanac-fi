@@ -15,6 +15,7 @@
     { "path": "../../packages/config" },
     { "path": "../../packages/db" },
     { "path": "../../packages/api-contracts" },
+    { "path": "../../packages/secrets" },
     { "path": "../../packages/telemetry" }
   ]
 }

@@ -55,7 +55,7 @@ This is the dependency-ordered implementation backlog for Almanac FI. Each item 
 | 019  | [Import provenance, deduplication, and reconciliation](./019-import-provenance-dedupe-and-reconciliation/requirements.md)     | Complete    | 006, 007, 016, 017                 |
 | 020  | [CSV connector and normalization pipeline](./020-csv-import-pipeline/requirements.md)                                         | Complete    | 004, 015, 016, 017, 019            |
 | 021  | [CSV mapping wizard](./021-csv-import-mapping-wizard/requirements.md)                                                         | Complete    | 010, 020                           |
-| 022  | [SimpleFIN connection flow](./022-simplefin-connection-flow/requirements.md)                                                  | Deferred    | 015, 016a                          |
+| 022  | [SimpleFIN connection flow](./022-simplefin-connection-flow/requirements.md)                                                  | Complete    | 015, 016a                          |
 | 023  | [SimpleFIN sync and sync health](./023-simplefin-sync-and-sync-health/requirements.md)                                        | Deferred    | 014, 016a, 017, 019, 022           |
 | 023a | [Application UX foundation](./023a-application-ux-foundation/requirements.md)                                                  | Complete    | 010, 016, 017, 018, 021            |
 | 024  | [Manual financial data entry](./024-manual-financial-data-entry/requirements.md)                                              | Complete    | 006, 016a, 017, 018                |
