@@ -59,6 +59,8 @@ import {
   type Institution,
   type ProviderConnection,
   providerConnectionListSchema,
+  providerConnectionSchema,
+  type SimpleFinConnectRequest,
   transactionListSchema,
   transactionDetailsSchema,
   manualTransactionInputSchema,
@@ -146,7 +148,13 @@ async function requestJson(path: string, init?: RequestInit): Promise<unknown> {
     ...init,
   });
   if (!response.ok) {
-    throw new Error("The local API could not complete the request.");
+    const body = (await response.json().catch(() => undefined)) as
+      { detail?: unknown } | undefined;
+    throw new Error(
+      typeof body?.detail === "string"
+        ? body.detail
+        : "The local API could not complete the request.",
+    );
   }
   return response.json();
 }
@@ -224,6 +232,17 @@ export async function getProviderConnections(): Promise<
   return providerConnectionListSchema.parse(
     await requestJson("/api/provider-connections"),
   ).items;
+}
+
+export async function connectSimpleFin(
+  input: SimpleFinConnectRequest = {},
+): Promise<ProviderConnection> {
+  return providerConnectionSchema.parse(
+    await requestJson("/api/simplefin/connections", {
+      body: JSON.stringify(input),
+      method: "POST",
+    }),
+  );
 }
 
 export async function getExternalInstitutionConnections(): Promise<

@@ -19,6 +19,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 
 import {
   commitCsvImport,
+  connectSimpleFin,
   createCategorizationRule,
   createCategory,
   createHousehold,
@@ -1430,6 +1431,7 @@ function Institutions(): React.JSX.Element {
 
 function Connections(): React.JSX.Element {
   const queryClient = useQueryClient();
+  const [setupToken, setSetupToken] = useState("");
   const providers = useQuery({
     queryFn: getProviderConnections,
     queryKey: ["provider-connections"],
@@ -1453,12 +1455,61 @@ function Connections(): React.JSX.Element {
       ]);
     },
   });
+  const connect = useMutation({
+    mutationFn: () =>
+      connectSimpleFin(
+        setupToken.trim() === "" ? {} : { setupToken: setupToken.trim() },
+      ),
+    onSuccess: async () => {
+      setSetupToken("");
+      await queryClient.invalidateQueries({
+        queryKey: ["provider-connections"],
+      });
+    },
+  });
   return (
     <section aria-labelledby="connections-heading" className="page">
       <h2 id="connections-heading">Connections</h2>
+      <section aria-labelledby="simplefin-connect-heading">
+        <h3 id="simplefin-connect-heading">Connect SimpleFIN</h3>
+        <p>
+          <a
+            href="https://bridge.simplefin.org/simplefin/create"
+            rel="noreferrer"
+            target="_blank"
+          >
+            Create a one-time setup token in SimpleFIN
+          </a>
+          , then paste it here. Leave this blank to use SIMPLE_FIN_TOKEN from
+          your local .env file.
+        </p>
+        <form
+          className="stacked-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            connect.mutate();
+          }}
+        >
+          <label htmlFor="simplefin-setup-token">SimpleFIN setup token</label>
+          <textarea
+            autoComplete="off"
+            id="simplefin-setup-token"
+            onChange={(event) => setSetupToken(event.target.value)}
+            spellCheck={false}
+            value={setupToken}
+          />
+          <button disabled={connect.isPending} type="submit">
+            {connect.isPending ? "Connecting…" : "Connect SimpleFIN"}
+          </button>
+          {connect.isError ? <p role="alert">{connect.error.message}</p> : null}
+          {connect.isSuccess ? (
+            <p role="status">SimpleFIN is connected.</p>
+          ) : null}
+        </form>
+      </section>
       <p>
-        Revoking credentials stops future sync. Institutions, accounts, and
-        financial history remain stored locally.
+        Disconnecting stops future sync. Institutions, accounts, and financial
+        history remain stored locally.
       </p>
       {providers.data?.length === 0 ? (
         <p>No provider connections yet.</p>
@@ -1488,7 +1539,7 @@ function Connections(): React.JSX.Element {
               onClick={() => revoke.mutate(provider.id)}
               type="button"
             >
-              Revoke credentials
+              Disconnect
             </button>
           </li>
         ))}

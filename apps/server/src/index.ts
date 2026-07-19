@@ -126,6 +126,7 @@ import {
   securityListSchema,
   securitySchema,
   setBudgetLineSchema,
+  simpleFinConnectRequestSchema,
   transactionDetailsSchema,
   transactionFilterSchema,
   transactionListSchema,
@@ -149,6 +150,11 @@ import {
 import { calculateBudget } from "@almanac-fi/core";
 import { createDatabase, now, type AppDatabase } from "@almanac-fi/db";
 import { createUnitOfWork, inUnitOfWork } from "@almanac-fi/db/repositories";
+import {
+  FileSecretStore,
+  secretKeySchema,
+  type SecretStore,
+} from "@almanac-fi/secrets";
 import { initializeTelemetry } from "@almanac-fi/telemetry";
 import Fastify, {
   type FastifyInstance,
@@ -156,10 +162,17 @@ import Fastify, {
 } from "fastify";
 
 import { previewCsv } from "./csv.js";
+import {
+  HttpSimpleFinClient,
+  SimpleFinClaimError,
+  type SimpleFinClient,
+} from "./simplefin.js";
 
 export type ServerOptions = Readonly<{
   config?: AppConfig;
   database?: AppDatabase;
+  secretStore?: SecretStore;
+  simpleFinClient?: SimpleFinClient;
 }>;
 
 function parseRequest<Output>(
@@ -206,6 +219,9 @@ export async function createServer(
   await ensureDataHome(config);
   const database = options.database ?? createDatabase(databasePath(config));
   database.migrate();
+  const secretStore =
+    options.secretStore ?? new FileSecretStore(config.dataHome);
+  const simpleFinClient = options.simpleFinClient ?? new HttpSimpleFinClient();
   const app = Fastify({ logger: false });
   const requestIds = new WeakMap<object, string>();
 
@@ -646,6 +662,50 @@ export async function createServer(
     });
     return reply.status(201).send(providerConnectionSchema.parse(connection));
   });
+  app.post("/simplefin/connections", async (request, reply) => {
+    const input = parseRequest(simpleFinConnectRequestSchema, request.body);
+    const setupToken = input.setupToken ?? config.simpleFinSetupToken;
+    if (setupToken === undefined) {
+      badRequest(
+        "Paste a SimpleFIN setup token or configure SIMPLE_FIN_TOKEN in .env.",
+      );
+    }
+
+    let claim;
+    try {
+      claim = await simpleFinClient.claim(setupToken);
+    } catch (error) {
+      if (error instanceof SimpleFinClaimError) {
+        Object.assign(error, {
+          statusCode:
+            error.kind === "invalid_token" || error.kind === "already_claimed"
+              ? 400
+              : 502,
+        });
+      }
+      throw error;
+    }
+
+    const secretKey = secretKeySchema.parse(`simplefin-${randomUUID()}`);
+    try {
+      secretStore.set(secretKey, claim.accessUrl);
+    } catch (error) {
+      secretStore.delete(secretKey);
+      throw error;
+    }
+    try {
+      const connection = unitOfWork.providerConnections.create({
+        provider: "simplefin",
+        providerNamespace: claim.providerNamespace,
+        secretKey,
+        status: "connected",
+      });
+      return reply.status(201).send(providerConnectionSchema.parse(connection));
+    } catch (error) {
+      secretStore.delete(secretKey);
+      throw error;
+    }
+  });
   app.get("/provider-connections/:id", async (request) => {
     const id = parseRequest(
       entityIdSchema,
@@ -670,8 +730,21 @@ export async function createServer(
       entityIdSchema,
       (request.params as { id?: unknown }).id,
     );
-    if (!unitOfWork.providerConnections.revoke(id)) {
-      notFound("The provider connection does not exist.");
+    const current = unitOfWork.providerConnections.findById(id);
+    if (!current) notFound("The provider connection does not exist.");
+    const secretKey =
+      current.secretKey === null
+        ? null
+        : secretKeySchema.parse(current.secretKey);
+    const secret = secretKey === null ? undefined : secretStore.get(secretKey);
+    if (secretKey !== null) secretStore.delete(secretKey);
+    try {
+      unitOfWork.providerConnections.revoke(id);
+    } catch (error) {
+      if (secretKey !== null && secret !== undefined) {
+        secretStore.set(secretKey, secret);
+      }
+      throw error;
     }
     return reply.status(204).send();
   });

@@ -22,4 +22,4 @@ Mock SimpleFIN exchange and test connect/disconnect security behavior.
 
 ## Status
 
-Deferred
+Complete

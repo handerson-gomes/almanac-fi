@@ -2,12 +2,14 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { createDatabase } from "@almanac-fi/db";
 import { createUnitOfWork } from "@almanac-fi/db/repositories";
+import { FakeSecretStore } from "@almanac-fi/secrets";
 
 import { createServer } from "./index.js";
+import { SimpleFinClaimError } from "./simplefin.js";
 
 test("health, readiness, and OpenAPI are deterministic", async () => {
   const dataHome = await mkdtemp(join(tmpdir(), "almanac-fi-server-"));
@@ -255,6 +257,107 @@ test("supports institution, account, balance, and provider connection CRUD", asy
       })
     ).statusCode,
   ).toBe(204);
+
+  await app.close();
+  await rm(dataHome, { force: true, recursive: true });
+});
+
+test("claims and disconnects SimpleFIN while keeping the access URL out of SQLite and responses", async () => {
+  const dataHome = await mkdtemp(join(tmpdir(), "almanac-fi-server-"));
+  const database = createDatabase();
+  const secretStore = new FakeSecretStore();
+  const accessUrl =
+    "https://simplefin-user:simplefin-password@bridge.example/simplefin";
+  const claim = vi.fn().mockResolvedValue({
+    accessUrl,
+    providerNamespace: "https://bridge.example/simplefin",
+  });
+  const app = await createServer({
+    config: {
+      dataHome,
+      host: "127.0.0.1",
+      logLevel: "error",
+      port: 0,
+      simpleFinSetupToken: "configured-setup-token",
+    },
+    database,
+    secretStore,
+    simpleFinClient: { claim },
+  });
+
+  const response = await app.inject({
+    method: "POST",
+    payload: {},
+    url: "/simplefin/connections",
+  });
+  expect(response.statusCode).toBe(201);
+  expect(claim).toHaveBeenCalledWith("configured-setup-token");
+  expect(response.body).not.toContain(accessUrl);
+  expect(response.body).not.toContain("simplefin-password");
+
+  const connection = response.json();
+  expect(connection).toMatchObject({
+    provider: "simplefin",
+    providerNamespace: "https://bridge.example/simplefin",
+    status: "connected",
+  });
+  expect(secretStore.get(connection.secretKey)).toBe(accessUrl);
+  const stored = database.sqlite
+    .prepare("SELECT * FROM provider_connections WHERE id = ?")
+    .get(connection.id);
+  expect(JSON.stringify(stored)).not.toContain(accessUrl);
+  expect(JSON.stringify(stored)).not.toContain("simplefin-password");
+
+  const disconnect = await app.inject({
+    method: "DELETE",
+    url: `/provider-connections/${connection.id}`,
+  });
+  expect(disconnect.statusCode).toBe(204);
+  expect(secretStore.has(connection.secretKey)).toBe(false);
+  expect(
+    (
+      await app.inject({
+        method: "GET",
+        url: `/provider-connections/${connection.id}`,
+      })
+    ).json(),
+  ).toMatchObject({ secretKey: null, status: "disconnected" });
+
+  await app.close();
+  await rm(dataHome, { force: true, recursive: true });
+});
+
+test("failed SimpleFIN claims preserve neither secret nor connection metadata", async () => {
+  const dataHome = await mkdtemp(join(tmpdir(), "almanac-fi-server-"));
+  const secretStore = new FakeSecretStore();
+  const app = await createServer({
+    config: { dataHome, host: "127.0.0.1", logLevel: "error", port: 0 },
+    secretStore,
+    simpleFinClient: {
+      claim: vi
+        .fn()
+        .mockRejectedValue(
+          new SimpleFinClaimError(
+            "already_claimed",
+            "The setup token may be compromised.",
+          ),
+        ),
+    },
+  });
+  const setupToken = "one-time-setup-token";
+
+  const response = await app.inject({
+    method: "POST",
+    payload: { setupToken },
+    url: "/simplefin/connections",
+  });
+  expect(response.statusCode).toBe(400);
+  expect(response.body).toContain("compromised");
+  expect(response.body).not.toContain(setupToken);
+  expect(secretStore.diagnostics().configuredKeys).toEqual([]);
+  expect(
+    (await app.inject({ method: "GET", url: "/provider-connections" })).json(),
+  ).toEqual({ items: [] });
 
   await app.close();
   await rm(dataHome, { force: true, recursive: true });

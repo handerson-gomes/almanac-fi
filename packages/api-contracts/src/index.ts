@@ -197,6 +197,14 @@ export type ProviderConnection = z.infer<typeof providerConnectionSchema>;
 export type ExternalInstitutionConnection = z.infer<
   typeof externalInstitutionConnectionSchema
 >;
+export const simpleFinConnectRequestSchema = z
+  .object({
+    setupToken: z.string().trim().min(1).max(8_192).optional(),
+  })
+  .default({});
+export type SimpleFinConnectRequest = z.input<
+  typeof simpleFinConnectRequestSchema
+>;
 
 export const institutionMatchEvidenceSchema = z.object({
   institutionId: entityIdSchema,
@@ -1915,6 +1923,16 @@ export const openApiDocument = Object.freeze({
       patch: {
         operationId: "updateProviderConnection",
         responses: { "200": { description: "Provider connection updated" } },
+      },
+    },
+    "/simplefin/connections": {
+      post: {
+        operationId: "connectSimpleFin",
+        responses: {
+          "201": { description: "SimpleFIN connection established" },
+          "400": { description: "Invalid, used, or compromised setup token" },
+          "502": { description: "SimpleFIN unavailable or invalid response" },
+        },
       },
     },
     "/external-institution-connections": {
