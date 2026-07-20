@@ -597,6 +597,52 @@ const migrations = [
       DROP TABLE IF EXISTS plan_version_inputs; DROP INDEX IF EXISTS plan_versions_one_active_per_household;
       DROP TABLE IF EXISTS plan_versions;`,
   },
+  {
+    id: "0018_simplefin_sync_health",
+    up: `
+      CREATE TABLE IF NOT EXISTS simplefin_sync_runs (
+        id TEXT PRIMARY KEY,
+        provider_connection_id TEXT NOT NULL REFERENCES provider_connections(id),
+        mode TEXT NOT NULL CHECK(mode IN ('initial', 'rolling', 'deep')),
+        status TEXT NOT NULL CHECK(status IN ('processing', 'success', 'partial', 'failed')),
+        coverage_start TEXT NOT NULL,
+        coverage_end TEXT NOT NULL,
+        accounts_affected INTEGER NOT NULL DEFAULT 0,
+        transactions_added INTEGER NOT NULL DEFAULT 0,
+        transactions_updated INTEGER NOT NULL DEFAULT 0,
+        transactions_unchanged INTEGER NOT NULL DEFAULT 0,
+        balances_updated INTEGER NOT NULL DEFAULT 0,
+        errors_json TEXT NOT NULL DEFAULT '[]',
+        affected_account_ids_json TEXT NOT NULL DEFAULT '[]',
+        started_at TEXT NOT NULL,
+        completed_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS simplefin_sync_runs_connection_started
+        ON simplefin_sync_runs(provider_connection_id, started_at DESC, id DESC);
+      CREATE TABLE IF NOT EXISTS simplefin_transaction_aliases (
+        provider_connection_id TEXT NOT NULL REFERENCES provider_connections(id),
+        remote_connection_id TEXT NOT NULL,
+        remote_account_id TEXT NOT NULL,
+        remote_transaction_id TEXT NOT NULL,
+        source_identity TEXT NOT NULL,
+        PRIMARY KEY(provider_connection_id, remote_connection_id, remote_account_id, remote_transaction_id)
+      );
+      CREATE INDEX IF NOT EXISTS simplefin_transaction_aliases_source
+        ON simplefin_transaction_aliases(source_identity);
+    `,
+    down: `DROP INDEX IF EXISTS simplefin_transaction_aliases_source;
+      DROP TABLE IF EXISTS simplefin_transaction_aliases;
+      DROP INDEX IF EXISTS simplefin_sync_runs_connection_started;
+      DROP TABLE IF EXISTS simplefin_sync_runs;`,
+  },
+  {
+    id: "0019_normalize_transaction_datetimes",
+    up: `UPDATE transactions
+      SET transaction_date = transaction_date || 'T00:00:00.000Z'
+      WHERE length(transaction_date) = 10
+        AND transaction_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]';`,
+    down: `SELECT 1;`,
+  },
 ] as const;
 
 export type AppDatabase = Readonly<{

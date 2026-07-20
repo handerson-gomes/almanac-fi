@@ -35,6 +35,111 @@ test("renders an accessible dashboard shell and API-ready state", async () => {
   expect(await screen.findByText("Local API is ready.")).toBeInTheDocument();
 });
 
+test("groups overview balances by purpose with account and institution context", async () => {
+  vi.stubGlobal("scrollTo", vi.fn());
+  const timestamp = "2026-07-19T12:00:00.000Z";
+  const checkingId = "11111111-1111-4111-8111-111111111111";
+  const retirementId = "22222222-2222-4222-8222-222222222222";
+  const reviewId = "33333333-3333-4333-8333-333333333333";
+  const bankId = "44444444-4444-4444-8444-444444444444";
+  const brokerageId = "55555555-5555-4555-8555-555555555555";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: string | URL | Request) => {
+      if (input.toString() === "/api/health") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            accountBreakdown: [
+              {
+                accountId: checkingId,
+                accountName: "Everyday Checking",
+                accountType: "checking",
+                availableAmountMinor: 145_000,
+                balanceAsOf: timestamp,
+                balanceMinor: 150_000,
+                currency: "USD",
+                institutionId: bankId,
+                institutionName: "Example Bank",
+                status: "active",
+              },
+              {
+                accountId: retirementId,
+                accountName: "Workplace 401(k)",
+                accountType: "traditional_401k",
+                availableAmountMinor: null,
+                balanceAsOf: timestamp,
+                balanceMinor: 2_500_000,
+                currency: "USD",
+                institutionId: brokerageId,
+                institutionName: "Example Brokerage",
+                status: "active",
+              },
+              {
+                accountId: reviewId,
+                accountName: "Individual ...123",
+                accountType: "unclassified",
+                availableAmountMinor: null,
+                balanceAsOf: timestamp,
+                balanceMinor: 800_000,
+                currency: "USD",
+                institutionId: brokerageId,
+                institutionName: "Example Brokerage",
+                status: "active",
+              },
+            ],
+            accountIds: [checkingId, retirementId, reviewId],
+            activity: {
+              confirmedTransferCount: 0,
+              currentTransactionCount: 0,
+              inflowMinor: 0,
+              outflowMinor: 0,
+            },
+            asOf: timestamp,
+            availableBalanceMinor: 145_000,
+            budgetActuals: [],
+            calculationVersion: "financial-state-v1",
+            currency: "USD",
+            currentBalanceMinor: 3_450_000,
+            investmentValueMinor: 0,
+            liabilityBalanceMinor: 0,
+            netWorthMinor: 3_450_000,
+            spendableFundsMinor: 145_000,
+            warnings: [],
+          }),
+          { status: 200 },
+        ),
+      );
+    }),
+  );
+  await appRouter.navigate({ to: "/" });
+  await appRouter.load();
+  render(<App />);
+
+  expect(
+    await screen.findByRole("heading", { name: "Accounts and balances" }),
+  ).toBeInTheDocument();
+  const cashAccounts = screen.getByRole("table", {
+    name: "Cash available accounts",
+  });
+  expect(cashAccounts).toHaveTextContent("Everyday Checking");
+  expect(cashAccounts).toHaveTextContent("Example Bank");
+  expect(cashAccounts).toHaveTextContent("$1,450.00");
+  expect(
+    screen.getByRole("table", { name: "Retirement accounts" }),
+  ).toHaveTextContent("Workplace 401(k)");
+  expect(
+    screen.getByRole("table", { name: "Other and needs review accounts" }),
+  ).toHaveTextContent("Individual ...123");
+  expect(
+    screen.queryByRole("table", { name: "Credit cards accounts" }),
+  ).not.toBeInTheDocument();
+});
+
 test("renders the accounts screen and its account creation form", async () => {
   vi.stubGlobal("scrollTo", vi.fn());
   vi.stubGlobal(
@@ -114,6 +219,21 @@ test("connects SimpleFIN without returning or retaining the setup token", async 
           }),
         );
       }
+      if (path === `/api/simplefin/connections/${connection.id}/sync-health`) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              connectionId: connection.id,
+              coverageEnd: null,
+              coverageStart: null,
+              lastRun: null,
+              lastSuccessAt: null,
+              status: "connected",
+            }),
+            { status: 200 },
+          ),
+        );
+      }
       return Promise.resolve(
         new Response(JSON.stringify({ items: [] }), { status: 200 }),
       );
@@ -128,9 +248,10 @@ test("connects SimpleFIN without returning or retaining the setup token", async 
   fireEvent.change(tokenInput, { target: { value: "one-time-token" } });
   fireEvent.click(screen.getByRole("button", { name: "Connect SimpleFIN" }));
 
-  expect(await screen.findByRole("status")).toHaveTextContent(
-    "SimpleFIN is connected.",
-  );
+  expect(
+    await screen.findByText("SimpleFIN is connected."),
+  ).toBeInTheDocument();
+  expect(await screen.findByText("No sync has run yet.")).toBeInTheDocument();
   expect(tokenInput).toHaveValue("");
   expect(fetchMock).toHaveBeenCalledWith(
     "/api/simplefin/connections",
@@ -376,6 +497,7 @@ test("renders budget fixture totals, variance, comparison, and data-quality warn
 test("renders transactions in aligned account and category columns", async () => {
   const accountId = "11111111-1111-4111-8111-111111111111";
   const categoryId = "22222222-2222-4222-8222-222222222222";
+  const institutionId = "55555555-5555-4555-8555-555555555555";
   const createdAt = "2026-07-13T00:00:00.000Z";
   vi.stubGlobal(
     "fetch",
@@ -442,6 +564,11 @@ test("renders transactions in aligned account and category columns", async () =>
           ),
         );
       }
+      if (path === "/api/transactions?status=pending") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ items: [] }), { status: 200 }),
+        );
+      }
       if (path === "/api/transactions/33333333-3333-4333-8333-333333333333") {
         return Promise.resolve(
           new Response(
@@ -483,10 +610,29 @@ test("renders transactions in aligned account and category columns", async () =>
                   externalConnectionId: null,
                   externalId: null,
                   id: accountId,
-                  institutionId: "55555555-5555-4555-8555-555555555555",
+                  institutionId,
                   name: "Everyday checking",
                   status: "active",
                   updatedAt: createdAt,
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (path === "/api/institutions") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [
+                {
+                  createdAt,
+                  domain: "example.test",
+                  id: institutionId,
+                  name: "Example Bank",
+                  updatedAt: createdAt,
+                  websiteUrl: "https://example.test",
                 },
               ],
             }),
@@ -522,11 +668,25 @@ test("renders transactions in aligned account and category columns", async () =>
   expect(table).toHaveTextContent("Description");
   expect(table).toHaveTextContent("Account");
   expect(table).toHaveTextContent("Category");
+  expect(table).toHaveTextContent("Status");
   expect(table).toHaveTextContent("Amount");
-  expect(screen.getByRole("cell", { name: "Everyday checking" })).toBeVisible();
+  expect(
+    await screen.findByRole("cell", {
+      name: "Everyday checking, Example Bank",
+    }),
+  ).toBeVisible();
   expect(screen.getByRole("cell", { name: "Food" })).toBeVisible();
-  expect(screen.getByRole("cell", { name: "-65.44" })).toBeVisible();
-  expect(table).not.toHaveTextContent("USD");
+  expect(screen.getByRole("cell", { name: "posted" })).toBeVisible();
+  expect(screen.getByRole("cell", { name: "-65.44 USD" })).toBeVisible();
+  expect(table).toHaveTextContent("USD");
+  expect(
+    screen.getByText("1 transactions loaded · 2026-07-13 to 2026-07-13"),
+  ).toBeVisible();
+  expect(
+    await screen.findByRole("option", {
+      name: "Example Bank — Everyday checking",
+    }),
+  ).toBeInTheDocument();
   const detailsButton = screen.getByRole("button", {
     name: "Show details for Coffee Shop",
   });
@@ -535,6 +695,7 @@ test("renders transactions in aligned account and category columns", async () =>
   expect(
     await screen.findByRole("heading", { name: "Transaction details" }),
   ).toBeVisible();
+  fireEvent.click(await screen.findByText("Import provenance"));
   expect(await screen.findByText("csv:coffee-shop")).toBeVisible();
   expect(
     screen.getByRole("button", { name: "Hide details for Coffee Shop" }),
@@ -548,7 +709,11 @@ test("renders transactions in aligned account and category columns", async () =>
   fireEvent.click(
     screen.getByRole("button", { name: "Load more transactions" }),
   );
-  expect(await screen.findByRole("cell", { name: "-12.34" })).toBeVisible();
+  expect(await screen.findByRole("cell", { name: "-12.34 USD" })).toBeVisible();
+  fireEvent.change(screen.getByLabelText("Status"), {
+    target: { value: "pending" },
+  });
+  expect(await screen.findByText("No transactions yet.")).toBeVisible();
 });
 
 test("renders the CSV mapping and import wizard", async () => {

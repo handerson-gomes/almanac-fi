@@ -14,6 +14,7 @@ Completed work items:
 - 020 — CSV connector and normalization pipeline
 - 021 — CSV mapping wizard
 - 022 — SimpleFIN connection flow
+- 023 — SimpleFIN sync and sync health
 - 023a — Application UX foundation
 
 Delivered capabilities:
@@ -27,9 +28,6 @@ Delivered capabilities:
 - Classify taxable, retirement, education, health-savings, depository, and debt accounts with specific subtypes for later tax-aware planning.
 - Reconcile provider organizations by scoped organization ID and domain, retaining ambiguous or unclassified imports for explicit review.
 - Claim one-time SimpleFIN setup tokens, keep Access URLs in the local SecretStore, show connection state, and disconnect without deleting imported financial records.
+- Run initial 90-day, rolling 60-day, two-year deep, or custom-range SimpleFIN syncs; bootstrap institutions and accounts, refresh balances, reconcile pending/posting/correction revisions, and report persistent sync health.
 
-Work item 023 remains deferred: SimpleFIN account, balance, transaction sync, and sync-health reporting are separate from the completed secure connection flow.
-
-The next planned SimpleFIN work item is 023 — SimpleFIN sync and sync health.
-
-Verification at this milestone: `pnpm check` passes with 88 tests.
+Verification at this milestone: `pnpm check` passes with 103 tests.

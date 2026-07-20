@@ -11,12 +11,26 @@ export interface FinancialStateRepository {
   snapshot(
     input: Readonly<{ asOf: string; currency: string }>,
   ): FinancialState & {
+    accountBreakdown: readonly FinancialStateAccountBreakdown[];
     budgetActuals: readonly Readonly<{
       actualAmountMinor: number;
       periodId: string;
     }>[];
   };
 }
+
+export type FinancialStateAccountBreakdown = Readonly<{
+  accountId: string;
+  accountName: string;
+  accountType: Account["accountType"];
+  availableAmountMinor: number | null;
+  balanceAsOf: string | null;
+  balanceMinor: number | null;
+  currency: string;
+  institutionId: string;
+  institutionName: string;
+  status: Account["status"];
+}>;
 
 type AccountBalanceRow = Readonly<{
   accountId: string;
@@ -32,10 +46,22 @@ export function createFinancialStateRepository(
     snapshot(input) {
       const accounts = database.sqlite
         .prepare(
-          "SELECT id, account_type AS accountType, currency FROM accounts WHERE currency = ? ORDER BY id",
+          `SELECT a.id, a.name, a.account_type AS accountType, a.currency, a.institution_id AS institutionId,
+             a.status, i.name AS institutionName
+           FROM accounts a JOIN institutions i ON i.id = a.institution_id
+           WHERE a.currency = ? AND a.status = 'active'
+           ORDER BY i.name, a.name, a.id`,
         )
         .all(input.currency) as Array<
-        Pick<Account, "accountType" | "currency" | "id">
+        Pick<
+          Account,
+          | "accountType"
+          | "currency"
+          | "id"
+          | "institutionId"
+          | "name"
+          | "status"
+        > & { institutionName: string }
       >;
       const balances = database.sqlite
         .prepare(
@@ -106,8 +132,9 @@ export function createFinancialStateRepository(
         .prepare(
           `SELECT t.id, t.amount_minor AS amountMinor, t.category_id AS categoryId, t.transaction_date AS transactionDate,
              EXISTS(SELECT 1 FROM transfer_matches m WHERE m.status = 'confirmed' AND (m.outbound_transaction_id = t.id OR m.inbound_transaction_id = t.id)) AS isConfirmedTransfer
-           FROM transactions t
-           WHERE t.is_current = 1 AND t.currency = ? AND t.transaction_date <= ?`,
+           FROM transactions t JOIN accounts a ON a.id = t.account_id
+           WHERE t.is_current = 1 AND a.status = 'active'
+             AND t.currency = ? AND t.transaction_date <= ?`,
         )
         .all(input.currency, input.asOf) as Array<{
         amountMinor: number;
@@ -177,6 +204,21 @@ export function createFinancialStateRepository(
       }));
       return {
         ...snapshot,
+        accountBreakdown: accounts.map((account) => {
+          const balance = balancesByAccount.get(account.id);
+          return {
+            accountId: account.id,
+            accountName: account.name,
+            accountType: account.accountType,
+            availableAmountMinor: balance?.availableAmountMinor ?? null,
+            balanceAsOf: balance?.asOf ?? null,
+            balanceMinor: balance?.amountMinor ?? null,
+            currency: account.currency,
+            institutionId: account.institutionId,
+            institutionName: account.institutionName,
+            status: account.status,
+          };
+        }),
         budgetActuals,
         liabilityBalanceMinor:
           snapshot.liabilityBalanceMinor + unlinkedLiabilities,

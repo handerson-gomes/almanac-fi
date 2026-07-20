@@ -127,6 +127,9 @@ import {
   securitySchema,
   setBudgetLineSchema,
   simpleFinConnectRequestSchema,
+  simpleFinSyncHealthSchema,
+  simpleFinSyncRequestSchema,
+  simpleFinSyncRunSchema,
   transactionDetailsSchema,
   transactionFilterSchema,
   transactionListSchema,
@@ -165,13 +168,19 @@ import { previewCsv } from "./csv.js";
 import {
   HttpSimpleFinClient,
   SimpleFinClaimError,
+  type SimpleFinAccountClient,
   type SimpleFinClient,
 } from "./simplefin.js";
+import {
+  SimpleFinSyncConfigurationError,
+  SimpleFinSyncService,
+} from "./simplefin-sync.js";
 
 export type ServerOptions = Readonly<{
   config?: AppConfig;
   database?: AppDatabase;
   secretStore?: SecretStore;
+  simpleFinAccountClient?: SimpleFinAccountClient;
   simpleFinClient?: SimpleFinClient;
 }>;
 
@@ -222,6 +231,13 @@ export async function createServer(
   const secretStore =
     options.secretStore ?? new FileSecretStore(config.dataHome);
   const simpleFinClient = options.simpleFinClient ?? new HttpSimpleFinClient();
+  const simpleFinAccountClient =
+    options.simpleFinAccountClient ?? new HttpSimpleFinClient();
+  const simpleFinSync = new SimpleFinSyncService(
+    database,
+    secretStore,
+    simpleFinAccountClient,
+  );
   const app = Fastify({ logger: false });
   const requestIds = new WeakMap<object, string>();
 
@@ -705,6 +721,30 @@ export async function createServer(
       secretStore.delete(secretKey);
       throw error;
     }
+  });
+  app.post("/simplefin/connections/:id/sync", async (request) => {
+    const id = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const input = parseRequest(simpleFinSyncRequestSchema, request.body);
+    try {
+      return simpleFinSyncRunSchema.parse(await simpleFinSync.sync(id, input));
+    } catch (error) {
+      if (error instanceof SimpleFinSyncConfigurationError) {
+        Object.assign(error, { statusCode: 409 });
+      }
+      throw error;
+    }
+  });
+  app.get("/simplefin/connections/:id/sync-health", async (request) => {
+    const id = parseRequest(
+      entityIdSchema,
+      (request.params as { id?: unknown }).id,
+    );
+    const health = simpleFinSync.health(id);
+    if (!health) notFound("The SimpleFIN connection does not exist.");
+    return simpleFinSyncHealthSchema.parse(health);
   });
   app.get("/provider-connections/:id", async (request) => {
     const id = parseRequest(

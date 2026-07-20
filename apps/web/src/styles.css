@@ -247,6 +247,124 @@ fieldset button {
   padding: 0.75rem 0;
 }
 
+.manual-entry-panel {
+  border: 1px solid #d8dee8;
+  border-radius: 0.6rem;
+  margin-bottom: 1.25rem;
+  padding: 0.85rem 1rem;
+}
+
+.manual-entry-panel summary {
+  color: #183b77;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.transaction-toolbar {
+  align-items: end;
+  background: #f8fafc;
+  border: 1px solid #e6eaf0;
+  border-radius: 0.6rem;
+  display: grid;
+  gap: 0.4rem 0.75rem;
+  grid-template-columns:
+    max-content minmax(12rem, 1fr) max-content minmax(9rem, 0.45fr)
+    auto;
+  padding: 0.85rem;
+}
+
+.transaction-toolbar label {
+  align-self: center;
+  font-weight: 650;
+}
+
+.secondary-button {
+  background: #fff;
+  border-color: #aeb8c5;
+  color: #183b77;
+}
+
+.secondary-button:hover:not(:disabled) {
+  background: #e8efff;
+  border-color: #84adff;
+}
+
+.transaction-result-summary {
+  color: #475467;
+  font-size: 0.9rem;
+  margin-bottom: -0.5rem;
+  margin-top: 1rem;
+}
+
+.data-table-wrap {
+  margin-top: 1.25rem;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.data-table {
+  border-collapse: collapse;
+  min-width: 44rem;
+  width: 100%;
+}
+
+.data-table th,
+.data-table td {
+  border-bottom: 1px solid #e6eaf0;
+  padding: 0.75rem;
+  text-align: left;
+}
+
+.data-table th {
+  background: #f8fafc;
+  color: #344054;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.overview-accounts {
+  margin-top: 2rem;
+}
+
+.account-balance-group {
+  border: 1px solid #d8dee8;
+  border-radius: 0.6rem;
+  margin-top: 0.75rem;
+  overflow: hidden;
+}
+
+.account-balance-group > summary {
+  align-items: center;
+  cursor: pointer;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 0.9rem 1rem;
+}
+
+.account-balance-group .data-table-wrap {
+  margin-top: 0;
+}
+
+.overview-account-table {
+  min-width: 54rem;
+}
+
+.overview-account-amount {
+  font-variant-numeric: tabular-nums;
+  text-align: right !important;
+  white-space: nowrap;
+}
+
+.account-status-note {
+  color: #667085;
+  display: block;
+  font-size: 0.8rem;
+  margin-top: 0.2rem;
+  text-transform: capitalize;
+}
+
 .transaction-table-wrap {
   contain: inline-size;
   margin-top: 1.25rem;
@@ -257,7 +375,7 @@ fieldset button {
 
 .transaction-table {
   border-collapse: collapse;
-  min-width: 58rem;
+  min-width: 64rem;
   table-layout: fixed;
   width: 100%;
 }
@@ -288,14 +406,18 @@ fieldset button {
 
 .transaction-table th:nth-child(3),
 .transaction-table th:nth-child(4) {
-  width: 9rem;
+  width: 10.5rem;
 }
 
 .transaction-table th:nth-child(5) {
-  width: 8.5rem;
+  width: 6.5rem;
 }
 
 .transaction-table th:nth-child(6) {
+  width: 8.5rem;
+}
+
+.transaction-table th:nth-child(7) {
   width: 5.5rem;
 }
 
@@ -305,8 +427,49 @@ fieldset button {
   white-space: nowrap;
 }
 
-.transaction-table th:nth-child(5) {
+.transaction-table th:nth-child(6) {
   text-align: right;
+}
+
+.account-cell strong,
+.account-cell span {
+  display: block;
+}
+
+.account-cell span {
+  color: #667085;
+  font-size: 0.82rem;
+  margin-top: 0.15rem;
+}
+
+.status-badge {
+  background: #f2f4f7;
+  border-radius: 999px;
+  color: #344054;
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.2rem 0.5rem;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.status-badge.pending,
+.status-badge.unclassified {
+  background: #fff7ed;
+  color: #b54708;
+}
+
+.status-badge.posted,
+.status-badge.active {
+  background: #ecfdf3;
+  color: #027a48;
+}
+
+.status-badge.closed,
+.status-badge.hidden {
+  background: #f2f4f7;
+  color: #475467;
 }
 
 .transaction-action {
@@ -363,6 +526,22 @@ fieldset button {
 .transaction-detail-grid dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.provenance-details {
+  border-top: 1px solid #d8dee8;
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+}
+
+.provenance-details summary {
+  color: #475467;
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.provenance-details .transaction-detail-grid {
+  margin-top: 0.85rem;
 }
 
 .transaction-pagination {
@@ -500,6 +679,18 @@ fieldset button {
 
   .planning-controls {
     grid-template-columns: 1fr;
+  }
+
+  .transaction-toolbar {
+    align-items: stretch;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+
+  .transaction-toolbar > * {
+    max-width: 100%;
+    min-width: 0;
+    width: 100%;
   }
 
   fieldset label {

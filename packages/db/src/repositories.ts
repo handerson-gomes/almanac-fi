@@ -988,7 +988,10 @@ export function createUnitOfWork(database: AppDatabase): UnitOfWork {
       return { splits, transaction };
     },
     list(filter = {}, request) {
-      const conditions = ["is_current = 1"];
+      const conditions = [
+        "is_current = 1",
+        "account_id IN (SELECT id FROM accounts WHERE status != 'hidden')",
+      ];
       const values: (string | number)[] = [];
       const cursor = parseTransactionCursor(request?.cursor);
       if (cursor) {

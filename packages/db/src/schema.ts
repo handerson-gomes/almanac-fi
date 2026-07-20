@@ -72,6 +72,41 @@ export const providerConnections = sqliteTable("provider_connections", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const simpleFinSyncRuns = sqliteTable("simplefin_sync_runs", {
+  accountsAffected: integer("accounts_affected").notNull(),
+  affectedAccountIdsJson: text("affected_account_ids_json").notNull(),
+  balancesUpdated: integer("balances_updated").notNull(),
+  completedAt: text("completed_at"),
+  coverageEnd: text("coverage_end").notNull(),
+  coverageStart: text("coverage_start").notNull(),
+  errorsJson: text("errors_json").notNull(),
+  id: text("id").primaryKey(),
+  mode: text("mode", { enum: ["deep", "initial", "rolling"] }).notNull(),
+  providerConnectionId: text("provider_connection_id")
+    .notNull()
+    .references(() => providerConnections.id),
+  startedAt: text("started_at").notNull(),
+  status: text("status", {
+    enum: ["failed", "partial", "processing", "success"],
+  }).notNull(),
+  transactionsAdded: integer("transactions_added").notNull(),
+  transactionsUnchanged: integer("transactions_unchanged").notNull(),
+  transactionsUpdated: integer("transactions_updated").notNull(),
+});
+
+export const simpleFinTransactionAliases = sqliteTable(
+  "simplefin_transaction_aliases",
+  {
+    providerConnectionId: text("provider_connection_id")
+      .notNull()
+      .references(() => providerConnections.id),
+    remoteAccountId: text("remote_account_id").notNull(),
+    remoteConnectionId: text("remote_connection_id").notNull(),
+    remoteTransactionId: text("remote_transaction_id").notNull(),
+    sourceIdentity: text("source_identity").notNull(),
+  },
+);
+
 export const externalInstitutionConnections = sqliteTable(
   "external_institution_connections",
   {

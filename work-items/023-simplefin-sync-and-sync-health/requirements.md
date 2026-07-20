@@ -22,4 +22,4 @@ Run mocked sync fixtures for pending/posting/correction and UI health states.
 
 ## Status
 
-Deferred
+Complete

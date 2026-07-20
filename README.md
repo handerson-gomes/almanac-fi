@@ -23,7 +23,7 @@ pnpm dev
 
 `pnpm dev` starts the Fastify API at `http://127.0.0.1:4310`; `pnpm dev:web` starts the Vite dashboard with its `/api` proxy. Use `pnpm dev:cli` or `pnpm dev:mcp` for the other boundary bootstraps. `pnpm start` runs the compiled API after `pnpm build`.
 
-To connect SimpleFIN, open the dashboard's Connections screen and paste a one-time setup token. For local development, you can instead set `SIMPLE_FIN_TOKEN` in `.env` and submit the blank form. The claimed Access URL is never returned by the API or written to SQLite; it is stored under the configured data home with owner-only directory and file permissions. Disconnecting removes that secret while retaining local institutions, accounts, balances, and transaction history.
+To connect SimpleFIN, open the dashboard's Connections screen and paste a one-time setup token. For local development, you can instead set `SIMPLE_FIN_TOKEN` in `.env` and submit the blank form. The claimed Access URL is never returned by the API or written to SQLite; it is stored under the configured data home with owner-only directory and file permissions. From the same screen, run an initial 90-day sync, a rolling 60-day refresh, a two-year deep sync, or enter a custom range. Sync creates provider-backed institutions and accounts, refreshes balances, imports transactions idempotently, and displays coverage, errors, and affected-account counts. Disconnecting removes the secret while retaining local institutions, accounts, balances, and transaction history.
 
 ### Resetting pre-016a local data
 

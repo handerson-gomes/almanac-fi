@@ -363,6 +363,313 @@ test("failed SimpleFIN claims preserve neither secret nor connection metadata", 
   await rm(dataHome, { force: true, recursive: true });
 });
 
+test("syncs SimpleFIN institutions, balances, pending postings, and corrections idempotently", async () => {
+  const dataHome = await mkdtemp(join(tmpdir(), "almanac-fi-server-"));
+  const database = createDatabase();
+  const secretStore = new FakeSecretStore();
+  const transactionTime = Date.parse("2026-07-18T12:00:00.000Z") / 1_000;
+  const baseAccount = {
+    availableBalance: "975.00",
+    balance: "1000.00",
+    balanceDate: transactionTime,
+    connectionId: "remote-connection",
+    currency: "USD",
+    id: "remote-account",
+    name: "Household Checking",
+  };
+  const remoteConnection = {
+    id: "remote-connection",
+    name: "Example Bank login",
+    organizationId: "example-bank",
+    organizationName: "Example Bank",
+    organizationUrl: "https://example.test",
+  };
+  const responses = [
+    {
+      accounts: [
+        {
+          ...baseAccount,
+          transactions: [
+            {
+              amount: "-25.00",
+              description: "Corner Market",
+              extra: { category: "Groceries" },
+              id: "pending-transaction",
+              pending: true,
+              posted: 0,
+              transactedAt: transactionTime,
+            },
+          ],
+        },
+      ],
+      connections: [remoteConnection],
+      errors: [],
+    },
+    {
+      accounts: [
+        {
+          ...baseAccount,
+          transactions: [
+            {
+              amount: "-25.00",
+              description: "Corner Market",
+              extra: { category: "Groceries" },
+              id: "posted-transaction",
+              pending: false,
+              posted: transactionTime + 86_400,
+              transactedAt: transactionTime,
+            },
+          ],
+        },
+      ],
+      connections: [remoteConnection],
+      errors: [],
+    },
+    {
+      accounts: [
+        {
+          ...baseAccount,
+          transactions: [
+            {
+              amount: "-24.50",
+              description: "Corner Market",
+              extra: { category: "Groceries" },
+              id: "posted-transaction",
+              pending: false,
+              posted: transactionTime + 86_400,
+              transactedAt: transactionTime,
+            },
+          ],
+        },
+      ],
+      connections: [remoteConnection],
+      errors: [],
+    },
+  ];
+  const fetchAccounts = vi
+    .fn()
+    .mockResolvedValueOnce(responses[0])
+    .mockResolvedValueOnce(responses[1])
+    .mockResolvedValue(responses[2]);
+  const app = await createServer({
+    config: { dataHome, host: "127.0.0.1", logLevel: "error", port: 0 },
+    database,
+    secretStore,
+    simpleFinAccountClient: { fetchAccounts },
+    simpleFinClient: {
+      claim: vi.fn().mockResolvedValue({
+        accessUrl: "https://user:password@bridge.example/simplefin",
+        providerNamespace: "https://bridge.example/simplefin",
+      }),
+    },
+  });
+  const connection = (
+    await app.inject({
+      method: "POST",
+      payload: { setupToken: "setup-token" },
+      url: "/simplefin/connections",
+    })
+  ).json();
+
+  const runSync = async (mode: "initial" | "rolling") =>
+    (
+      await app.inject({
+        method: "POST",
+        payload: {
+          endDate: "2026-07-19",
+          mode,
+          startDate: "2026-07-18",
+        },
+        url: `/simplefin/connections/${connection.id}/sync`,
+      })
+    ).json();
+  const initial = await runSync("initial");
+  const posted = await runSync("rolling");
+  const corrected = await runSync("rolling");
+  const retry = await runSync("rolling");
+
+  expect(initial).toMatchObject({
+    accountsAffected: 1,
+    balancesUpdated: 1,
+    status: "success",
+    transactionsAdded: 1,
+  });
+  expect(posted).toMatchObject({
+    balancesUpdated: 0,
+    transactionsAdded: 0,
+    transactionsUpdated: 1,
+  });
+  expect(corrected).toMatchObject({ transactionsUpdated: 1 });
+  expect(retry).toMatchObject({
+    transactionsAdded: 0,
+    transactionsUnchanged: 1,
+    transactionsUpdated: 0,
+  });
+  expect(
+    database.sqlite.prepare("SELECT * FROM institutions").all(),
+  ).toHaveLength(1);
+  expect(database.sqlite.prepare("SELECT * FROM accounts").all()).toHaveLength(
+    1,
+  );
+  expect(
+    database.sqlite.prepare("SELECT * FROM transactions").all(),
+  ).toHaveLength(3);
+  expect(
+    database.sqlite
+      .prepare("SELECT * FROM transactions WHERE is_current = 1")
+      .all(),
+  ).toHaveLength(1);
+  expect(
+    database.sqlite
+      .prepare(
+        "SELECT amount_minor AS amountMinor FROM transactions WHERE is_current = 1",
+      )
+      .get(),
+  ).toEqual({ amountMinor: -2450 });
+  const transactionList = await app.inject({
+    method: "GET",
+    url: "/transactions",
+  });
+  expect(transactionList.statusCode).toBe(200);
+  expect(transactionList.json().items[0].transactionDate).toMatch(
+    /^2026-07-18T/,
+  );
+  const health = (
+    await app.inject({
+      method: "GET",
+      url: `/simplefin/connections/${connection.id}/sync-health`,
+    })
+  ).json();
+  expect(health).toMatchObject({
+    connectionId: connection.id,
+    lastRun: { status: "success", transactionsUnchanged: 1 },
+    status: "connected",
+  });
+
+  await app.close();
+  await rm(dataHome, { force: true, recursive: true });
+});
+
+test("hides an existing generic SimpleFIN duplicate when a typed account has the same suffix and transactions", async () => {
+  const dataHome = await mkdtemp(join(tmpdir(), "almanac-fi-server-"));
+  const database = createDatabase();
+  const secretStore = new FakeSecretStore();
+  const transactionTime = Date.parse("2026-07-18T12:00:00.000Z") / 1_000;
+  const remoteConnection = {
+    id: "pnc-connection",
+    name: "PNC login",
+    organizationId: "pnc",
+    organizationName: "PNC Bank",
+    organizationUrl: "https://pnc.example",
+  };
+  const transaction = {
+    amount: "-12.34",
+    description: "Market",
+    extra: { category: "Groceries" },
+    pending: false,
+    posted: transactionTime,
+    transactedAt: transactionTime,
+  };
+  const genericAccount = {
+    availableBalance: "0.00",
+    balance: "20000.00",
+    balanceDate: transactionTime,
+    connectionId: remoteConnection.id,
+    currency: "USD",
+    id: "generic-7709",
+    name: "Account (7709)",
+    transactions: [{ ...transaction, id: "generic-transaction" }],
+  };
+  const checkingAccount = {
+    ...genericAccount,
+    availableBalance: "26556.35",
+    balance: "26556.35",
+    id: "spend-7709",
+    name: "Spend (7709)",
+    transactions: [{ ...transaction, id: "checking-transaction" }],
+  };
+  const fetchAccounts = vi
+    .fn()
+    .mockResolvedValueOnce({
+      accounts: [genericAccount],
+      connections: [remoteConnection],
+      errors: [],
+    })
+    .mockResolvedValue({
+      accounts: [genericAccount, checkingAccount],
+      connections: [remoteConnection],
+      errors: [],
+    });
+  const app = await createServer({
+    config: { dataHome, host: "127.0.0.1", logLevel: "error", port: 0 },
+    database,
+    secretStore,
+    simpleFinAccountClient: { fetchAccounts },
+    simpleFinClient: {
+      claim: vi.fn().mockResolvedValue({
+        accessUrl: "https://user:password@bridge.example/simplefin",
+        providerNamespace: "https://bridge.example/simplefin",
+      }),
+    },
+  });
+  const connection = (
+    await app.inject({
+      method: "POST",
+      payload: { setupToken: "setup-token" },
+      url: "/simplefin/connections",
+    })
+  ).json();
+  const sync = () =>
+    app.inject({
+      method: "POST",
+      payload: {
+        endDate: "2026-07-19",
+        mode: "rolling",
+        startDate: "2026-07-18",
+      },
+      url: `/simplefin/connections/${connection.id}/sync`,
+    });
+
+  expect((await sync()).statusCode).toBe(200);
+  expect((await sync()).statusCode).toBe(200);
+
+  expect(
+    database.sqlite
+      .prepare(
+        "SELECT name, status FROM accounts WHERE name LIKE '%7709%' ORDER BY name",
+      )
+      .all(),
+  ).toEqual([
+    { name: "Account (7709)", status: "hidden" },
+    { name: "Spend (7709)", status: "active" },
+  ]);
+  expect(
+    database.sqlite
+      .prepare(
+        "SELECT status FROM account_import_reviews WHERE remote_account_id = 'generic-7709'",
+      )
+      .get(),
+  ).toEqual({ status: "resolved" });
+  const transactions = (
+    await app.inject({ method: "GET", url: "/transactions" })
+  ).json();
+  expect(transactions.items).toHaveLength(1);
+  const financialState = (
+    await app.inject({ method: "GET", url: "/financial-state?currency=USD" })
+  ).json();
+  expect(financialState.accountBreakdown).toEqual([
+    expect.objectContaining({
+      accountName: "Spend (7709)",
+      accountType: "checking",
+      balanceMinor: 2_655_635,
+    }),
+  ]);
+  expect(financialState.activity.currentTransactionCount).toBe(1);
+
+  await app.close();
+  await rm(dataHome, { force: true, recursive: true });
+});
+
 test("previews and imports CSV rows idempotently with category rules", async () => {
   const dataHome = await mkdtemp(join(tmpdir(), "almanac-fi-server-"));
   const app = await createServer({
@@ -650,14 +957,36 @@ test("reports a currency-scoped current state without treating CDs as spendable"
     method: "GET",
     url: "/financial-state?asOf=2026-07-17T00:00:00.000Z&currency=USD",
   });
-  expect(response.statusCode).toBe(200);
-  expect(response.json()).toMatchObject({
+  expect(response.statusCode, response.body).toBe(200);
+  const financialState = response.json();
+  expect(financialState).toMatchObject({
     availableBalanceMinor: 8_000,
     calculationVersion: "financial-state-v1",
     currentBalanceMinor: 60_000,
     currency: "USD",
     spendableFundsMinor: 8_000,
   });
+  expect(financialState.accountBreakdown).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        accountId: checking.id,
+        accountName: "Checking",
+        accountType: "checking",
+        availableAmountMinor: 8_000,
+        balanceMinor: 10_000,
+        institutionId: institution.id,
+        institutionName: "Snapshot Bank",
+      }),
+      expect.objectContaining({
+        accountId: certificate.id,
+        accountName: "CD",
+        accountType: "certificate_of_deposit",
+        availableAmountMinor: null,
+        balanceMinor: 50_000,
+        institutionName: "Snapshot Bank",
+      }),
+    ]),
+  );
   await app.close();
   await rm(dataHome, { force: true, recursive: true });
 });

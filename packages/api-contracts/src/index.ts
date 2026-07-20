@@ -206,6 +206,55 @@ export type SimpleFinConnectRequest = z.input<
   typeof simpleFinConnectRequestSchema
 >;
 
+export const simpleFinSyncModeSchema = z.enum(["initial", "rolling", "deep"]);
+export const simpleFinSyncRequestSchema = z
+  .object({
+    endDate: z.iso.date().optional(),
+    mode: simpleFinSyncModeSchema.default("rolling"),
+    startDate: z.iso.date().optional(),
+  })
+  .refine(
+    (input) =>
+      input.startDate === undefined ||
+      input.endDate === undefined ||
+      input.startDate < input.endDate,
+    { message: "The sync start date must be before the end date." },
+  );
+export const simpleFinSyncErrorSchema = z.object({
+  accountId: z.string().nullable(),
+  code: z.string(),
+  connectionId: z.string().nullable(),
+  message: z.string(),
+});
+export const simpleFinSyncRunSchema = z.object({
+  accountsAffected: z.number().int().nonnegative(),
+  affectedAccountIds: z.array(entityIdSchema),
+  balancesUpdated: z.number().int().nonnegative(),
+  completedAt: z.iso.datetime().nullable(),
+  coverageEnd: z.iso.date(),
+  coverageStart: z.iso.date(),
+  errors: z.array(simpleFinSyncErrorSchema),
+  id: entityIdSchema,
+  mode: simpleFinSyncModeSchema,
+  providerConnectionId: entityIdSchema,
+  startedAt: z.iso.datetime(),
+  status: z.enum(["failed", "partial", "processing", "success"]),
+  transactionsAdded: z.number().int().nonnegative(),
+  transactionsUnchanged: z.number().int().nonnegative(),
+  transactionsUpdated: z.number().int().nonnegative(),
+});
+export const simpleFinSyncHealthSchema = z.object({
+  connectionId: entityIdSchema,
+  coverageEnd: z.iso.date().nullable(),
+  coverageStart: z.iso.date().nullable(),
+  lastRun: simpleFinSyncRunSchema.nullable(),
+  lastSuccessAt: z.iso.datetime().nullable(),
+  status: connectionStatusSchema,
+});
+export type SimpleFinSyncRequest = z.input<typeof simpleFinSyncRequestSchema>;
+export type SimpleFinSyncRun = z.infer<typeof simpleFinSyncRunSchema>;
+export type SimpleFinSyncHealth = z.infer<typeof simpleFinSyncHealthSchema>;
+
 export const institutionMatchEvidenceSchema = z.object({
   institutionId: entityIdSchema,
   strategy: z.enum(["domain", "organization_id"]),
@@ -1544,7 +1593,20 @@ export const financialStateWarningSchema = z.object({
   entityId: entityIdSchema,
   message: z.string(),
 });
+export const financialStateAccountSchema = z.object({
+  accountId: entityIdSchema,
+  accountName: z.string().trim().min(1),
+  accountType: accountTypeSchema,
+  availableAmountMinor: z.number().int().safe().nullable(),
+  balanceAsOf: z.iso.datetime().nullable(),
+  balanceMinor: z.number().int().safe().nullable(),
+  currency: currencySchema,
+  institutionId: entityIdSchema,
+  institutionName: z.string().trim().min(1),
+  status: accountStatusSchema,
+});
 export const financialStateSchema = z.object({
+  accountBreakdown: z.array(financialStateAccountSchema),
   accountIds: z.array(entityIdSchema),
   activity: z.object({
     confirmedTransferCount: z.number().int().nonnegative(),
@@ -1933,6 +1995,22 @@ export const openApiDocument = Object.freeze({
           "400": { description: "Invalid, used, or compromised setup token" },
           "502": { description: "SimpleFIN unavailable or invalid response" },
         },
+      },
+    },
+    "/simplefin/connections/{id}/sync": {
+      post: {
+        operationId: "syncSimpleFinConnection",
+        responses: {
+          "200": { description: "Completed SimpleFIN sync run" },
+          "409": { description: "Connection cannot currently sync" },
+          "502": { description: "SimpleFIN sync failed" },
+        },
+      },
+    },
+    "/simplefin/connections/{id}/sync-health": {
+      get: {
+        operationId: "getSimpleFinSyncHealth",
+        responses: { "200": { description: "SimpleFIN sync health" } },
       },
     },
     "/external-institution-connections": {

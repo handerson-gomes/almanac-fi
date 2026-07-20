@@ -469,7 +469,8 @@ export function createInstitutionServices(database: AppDatabase): Readonly<{
          ON CONFLICT(external_connection_id, external_id) DO UPDATE SET
            name = excluded.name, account_type = excluded.account_type,
            currency = excluded.currency, institution_id = excluded.institution_id,
-           status = 'active', updated_at = excluded.updated_at`,
+           status = CASE WHEN accounts.status = 'hidden' THEN 'hidden' ELSE 'active' END,
+           updated_at = excluded.updated_at`,
       )
       .run(
         accountId,

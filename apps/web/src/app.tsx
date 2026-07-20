@@ -52,19 +52,23 @@ import {
   getFinancialState,
   getPlanningDashboard,
   getScenarioAssumptions,
+  getSimpleFinSyncHealth,
   getPeople,
   getTransaction,
   getTransactions,
   previewCsvImport,
   resolveAccountImportReview,
   revokeProviderConnection,
+  syncSimpleFin,
   updateCsvMapping,
   updateInstitution,
   type Account,
   type AccountImportReview,
   type CreateAccount,
   type CsvMapping,
+  type FinancialState,
   type TransactionPage,
+  type ProviderConnection,
 } from "./api.js";
 
 function Layout(): React.JSX.Element {
@@ -152,6 +156,34 @@ function formatMinorUnits(amountMinor: number): string {
   return `${sign}${major}.${minor}`;
 }
 
+function formatCurrencyMinorUnits(
+  amountMinor: number,
+  currency: string,
+): string {
+  return new Intl.NumberFormat(undefined, {
+    currency,
+    currencyDisplay: "narrowSymbol",
+    style: "currency",
+  }).format(amountMinor / 100);
+}
+
+function accountDisplayName(
+  account: Account,
+  institutionNames: ReadonlyMap<string, string>,
+): string {
+  const institution =
+    institutionNames.get(account.institutionId) ?? "Unknown institution";
+  return `${institution} — ${account.name}`;
+}
+
+function formatDateTime(value: string | null): string {
+  if (value === null) return "—";
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
 function parseMoneyInput(value: string): number {
   const normalized = value.trim().replaceAll(",", "").replaceAll("$", "");
   const match = /^([+-]?)(\d+)(?:\.(\d{1,2}))?$/.exec(normalized);
@@ -168,6 +200,13 @@ function parseMoneyInput(value: string): number {
 function CsvImport(): React.JSX.Element {
   const queryClient = useQueryClient();
   const accounts = useQuery({ queryFn: getAccounts, queryKey: ["accounts"] });
+  const institutions = useQuery({
+    queryFn: getInstitutions,
+    queryKey: ["institutions"],
+  });
+  const institutionNames = new Map(
+    institutions.data?.map((institution) => [institution.id, institution.name]),
+  );
   const savedMappings = useQuery({
     queryFn: getCsvMappings,
     queryKey: ["csv-mappings"],
@@ -237,7 +276,7 @@ function CsvImport(): React.JSX.Element {
         <option value="">Select an account</option>
         {accounts.data?.map((account) => (
           <option key={account.id} value={account.id}>
-            {account.name} ({account.currency})
+            {accountDisplayName(account, institutionNames)} ({account.currency})
           </option>
         ))}
       </select>
@@ -459,22 +498,37 @@ function CsvImport(): React.JSX.Element {
 
 function Transactions(): React.JSX.Element {
   const queryClient = useQueryClient();
+  const [accountFilter, setAccountFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<
+    "" | TransactionPage["items"][number]["status"]
+  >("");
   const transactions = useInfiniteQuery<
     TransactionPage,
     Error,
     InfiniteData<TransactionPage>,
-    ["transactions"],
+    ["transactions", string, string],
     string | undefined
   >({
     getNextPageParam: (lastPage) => lastPage.nextCursor,
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) => getTransactions(pageParam),
-    queryKey: ["transactions"],
+    queryFn: ({ pageParam }) =>
+      getTransactions(pageParam, {
+        ...(accountFilter ? { accountId: accountFilter } : {}),
+        ...(statusFilter ? { status: statusFilter } : {}),
+      }),
+    queryKey: ["transactions", accountFilter, statusFilter],
   });
   const accounts = useQuery({
     queryFn: getAccounts,
     queryKey: ["accounts"],
   });
+  const institutions = useQuery({
+    queryFn: getInstitutions,
+    queryKey: ["institutions"],
+  });
+  const institutionNames = new Map(
+    institutions.data?.map((institution) => [institution.id, institution.name]),
+  );
   const categories = useQuery({
     queryFn: getCategories,
     queryKey: ["categories"],
@@ -496,8 +550,15 @@ function Transactions(): React.JSX.Element {
     queryFn: () => getTransaction(selectedId ?? ""),
     queryKey: ["transaction", selectedId],
   });
-  const accountNames = new Map(
-    accounts.data?.map((account) => [account.id, account.name]),
+  const accountDetails = new Map(
+    accounts.data?.map((account) => [
+      account.id,
+      {
+        account,
+        institutionName:
+          institutionNames.get(account.institutionId) ?? "Unknown institution",
+      },
+    ]),
   );
   const manualAccount = accounts.data?.find(
     (account) => account.id === manualAccountId,
@@ -539,6 +600,10 @@ function Transactions(): React.JSX.Element {
   const transactionItems = transactions.data?.pages.flatMap(
     (page) => page.items,
   );
+  const contextIsPending =
+    accounts.isPending || institutions.isPending || categories.isPending;
+  const contextError =
+    accounts.error ?? institutions.error ?? categories.error ?? null;
   useEffect(() => {
     const loadMore = loadMoreRef.current;
     if (
@@ -565,337 +630,462 @@ function Transactions(): React.JSX.Element {
   return (
     <section aria-labelledby="transactions-heading" className="page">
       <h2 id="transactions-heading">Transactions</h2>
-      <form
-        className="stacked-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          createManual.mutate();
-        }}
-      >
-        <h3>Record a transaction</h3>
-        <label htmlFor="manual-transaction-account">Account</label>
-        <select
-          id="manual-transaction-account"
-          onChange={(event) => setManualAccountId(event.target.value)}
-          required
-          value={manualAccountId}
+      <details className="manual-entry-panel">
+        <summary>Record a transaction manually</summary>
+        <form
+          className="stacked-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            createManual.mutate();
+          }}
         >
-          <option value="">Select an account</option>
+          <h3>Record a transaction</h3>
+          <label htmlFor="manual-transaction-account">Account</label>
+          <select
+            id="manual-transaction-account"
+            onChange={(event) => setManualAccountId(event.target.value)}
+            required
+            value={manualAccountId}
+          >
+            <option value="">Select an account</option>
+            {accounts.data?.map((account) => (
+              <option key={account.id} value={account.id}>
+                {accountDisplayName(account, institutionNames)} (
+                {account.currency})
+              </option>
+            ))}
+          </select>
+          <label htmlFor="manual-transaction-date">Transaction date</label>
+          <input
+            id="manual-transaction-date"
+            onChange={(event) => setManualDate(event.target.value)}
+            required
+            type="date"
+            value={manualDate}
+          />
+          <label htmlFor="manual-transaction-description">Description</label>
+          <input
+            id="manual-transaction-description"
+            onChange={(event) => setManualDescription(event.target.value)}
+            required
+            value={manualDescription}
+          />
+          <label htmlFor="manual-transaction-amount">
+            Amount ({manualAccount?.currency ?? "currency"}; use - for an
+            expense)
+          </label>
+          <input
+            id="manual-transaction-amount"
+            onChange={(event) => setManualAmountMinor(event.target.value)}
+            required
+            inputMode="decimal"
+            placeholder="0.00"
+            step="0.01"
+            type="number"
+            value={manualAmountMinor}
+          />
+          <label htmlFor="manual-transaction-category">Category</label>
+          <select
+            id="manual-transaction-category"
+            onChange={(event) => setManualCategoryId(event.target.value)}
+            value={manualCategoryId}
+          >
+            <option value="">Uncategorized</option>
+            {categories.data
+              ?.filter((category) => category.status === "active")
+              .map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+          </select>
+          <fieldset>
+            <legend>Splits (optional)</legend>
+            {manualSplits.map((split, index) => (
+              <div key={index}>
+                <label htmlFor={`manual-split-amount-${index}`}>
+                  Amount ({manualAccount?.currency ?? "currency"})
+                </label>
+                <input
+                  id={`manual-split-amount-${index}`}
+                  onChange={(event) =>
+                    setManualSplits((current) =>
+                      current.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? { ...item, amountMinor: event.target.value }
+                          : item,
+                      ),
+                    )
+                  }
+                  required
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  step="0.01"
+                  type="number"
+                  value={split.amountMinor}
+                />
+                <label htmlFor={`manual-split-category-${index}`}>
+                  Category
+                </label>
+                <select
+                  id={`manual-split-category-${index}`}
+                  onChange={(event) =>
+                    setManualSplits((current) =>
+                      current.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? { ...item, categoryId: event.target.value }
+                          : item,
+                      ),
+                    )
+                  }
+                  value={split.categoryId}
+                >
+                  <option value="">Uncategorized</option>
+                  {categories.data
+                    ?.filter((category) => category.status === "active")
+                    .map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                </select>
+                <label htmlFor={`manual-split-memo-${index}`}>Memo</label>
+                <input
+                  id={`manual-split-memo-${index}`}
+                  maxLength={500}
+                  onChange={(event) =>
+                    setManualSplits((current) =>
+                      current.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? { ...item, memo: event.target.value }
+                          : item,
+                      ),
+                    )
+                  }
+                  value={split.memo}
+                />
+                <button
+                  onClick={() =>
+                    setManualSplits((current) =>
+                      current.filter((_, itemIndex) => itemIndex !== index),
+                    )
+                  }
+                  type="button"
+                >
+                  Remove split
+                </button>
+              </div>
+            ))}
+            <button
+              onClick={() =>
+                setManualSplits((current) => [
+                  ...current,
+                  { amountMinor: "", categoryId: "", memo: "" },
+                ])
+              }
+              type="button"
+            >
+              Add split
+            </button>
+          </fieldset>
+          <button disabled={createManual.isPending} type="submit">
+            Record transaction
+          </button>
+          {createManual.isError ? (
+            <p role="alert">{createManual.error.message}</p>
+          ) : null}
+        </form>
+      </details>
+      <div
+        aria-label="Transaction filters"
+        className="transaction-toolbar"
+        role="group"
+      >
+        <label htmlFor="transaction-account-filter">Account</label>
+        <select
+          id="transaction-account-filter"
+          onChange={(event) => setAccountFilter(event.target.value)}
+          value={accountFilter}
+        >
+          <option value="">All accounts</option>
           {accounts.data?.map((account) => (
             <option key={account.id} value={account.id}>
-              {account.name} ({account.currency})
+              {accountDisplayName(account, institutionNames)}
             </option>
           ))}
         </select>
-        <label htmlFor="manual-transaction-date">Transaction date</label>
-        <input
-          id="manual-transaction-date"
-          onChange={(event) => setManualDate(event.target.value)}
-          required
-          type="date"
-          value={manualDate}
-        />
-        <label htmlFor="manual-transaction-description">Description</label>
-        <input
-          id="manual-transaction-description"
-          onChange={(event) => setManualDescription(event.target.value)}
-          required
-          value={manualDescription}
-        />
-        <label htmlFor="manual-transaction-amount">
-          Amount ({manualAccount?.currency ?? "currency"}; use - for an expense)
-        </label>
-        <input
-          id="manual-transaction-amount"
-          onChange={(event) => setManualAmountMinor(event.target.value)}
-          required
-          inputMode="decimal"
-          placeholder="0.00"
-          step="0.01"
-          type="number"
-          value={manualAmountMinor}
-        />
-        <label htmlFor="manual-transaction-category">Category</label>
+        <label htmlFor="transaction-status-filter">Status</label>
         <select
-          id="manual-transaction-category"
-          onChange={(event) => setManualCategoryId(event.target.value)}
-          value={manualCategoryId}
+          id="transaction-status-filter"
+          onChange={(event) =>
+            setStatusFilter(event.target.value as "" | "pending" | "posted")
+          }
+          value={statusFilter}
         >
-          <option value="">Uncategorized</option>
-          {categories.data
-            ?.filter((category) => category.status === "active")
-            .map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-              </option>
-            ))}
+          <option value="">All statuses</option>
+          <option value="posted">Posted</option>
+          <option value="pending">Pending</option>
         </select>
-        <fieldset>
-          <legend>Splits (optional)</legend>
-          {manualSplits.map((split, index) => (
-            <div key={index}>
-              <label htmlFor={`manual-split-amount-${index}`}>
-                Amount ({manualAccount?.currency ?? "currency"})
-              </label>
-              <input
-                id={`manual-split-amount-${index}`}
-                onChange={(event) =>
-                  setManualSplits((current) =>
-                    current.map((item, itemIndex) =>
-                      itemIndex === index
-                        ? { ...item, amountMinor: event.target.value }
-                        : item,
-                    ),
-                  )
-                }
-                required
-                inputMode="decimal"
-                placeholder="0.00"
-                step="0.01"
-                type="number"
-                value={split.amountMinor}
-              />
-              <label htmlFor={`manual-split-category-${index}`}>Category</label>
-              <select
-                id={`manual-split-category-${index}`}
-                onChange={(event) =>
-                  setManualSplits((current) =>
-                    current.map((item, itemIndex) =>
-                      itemIndex === index
-                        ? { ...item, categoryId: event.target.value }
-                        : item,
-                    ),
-                  )
-                }
-                value={split.categoryId}
-              >
-                <option value="">Uncategorized</option>
-                {categories.data
-                  ?.filter((category) => category.status === "active")
-                  .map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-              </select>
-              <label htmlFor={`manual-split-memo-${index}`}>Memo</label>
-              <input
-                id={`manual-split-memo-${index}`}
-                maxLength={500}
-                onChange={(event) =>
-                  setManualSplits((current) =>
-                    current.map((item, itemIndex) =>
-                      itemIndex === index
-                        ? { ...item, memo: event.target.value }
-                        : item,
-                    ),
-                  )
-                }
-                value={split.memo}
-              />
-              <button
-                onClick={() =>
-                  setManualSplits((current) =>
-                    current.filter((_, itemIndex) => itemIndex !== index),
-                  )
-                }
-                type="button"
-              >
-                Remove split
-              </button>
-            </div>
-          ))}
+        {accountFilter || statusFilter ? (
           <button
-            onClick={() =>
-              setManualSplits((current) => [
-                ...current,
-                { amountMinor: "", categoryId: "", memo: "" },
-              ])
-            }
+            className="secondary-button"
+            onClick={() => {
+              setAccountFilter("");
+              setStatusFilter("");
+            }}
             type="button"
           >
-            Add split
+            Clear filters
           </button>
-        </fieldset>
-        <button disabled={createManual.isPending} type="submit">
-          Record transaction
-        </button>
-        {createManual.isError ? (
-          <p role="alert">{createManual.error.message}</p>
         ) : null}
-      </form>
+      </div>
       {transactions.isPending ? (
         <p role="status">Loading transactions…</p>
       ) : null}
       {transactions.isError ? (
         <p role="alert">{transactions.error.message}</p>
       ) : null}
+      {transactionItems?.length && contextIsPending ? (
+        <p role="status">Loading account and category context…</p>
+      ) : null}
+      {contextError ? (
+        <p role="alert">
+          Account, institution, or category labels could not be loaded. Some
+          transaction context may be incomplete. {contextError.message}
+        </p>
+      ) : null}
       {transactionItems?.length === 0 ? <p>No transactions yet.</p> : null}
-      {transactionItems?.length ? (
-        <div className="transaction-table-wrap">
-          <table aria-label="Transactions" className="transaction-table">
-            <thead>
-              <tr>
-                <th scope="col">Date</th>
-                <th scope="col">Description</th>
-                <th scope="col">Account</th>
-                <th scope="col">Category</th>
-                <th scope="col">Amount</th>
-                <th scope="col">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {transactionItems.map((transaction) => {
-                const isExpanded = selectedId === transaction.id;
-                const detailId = `transaction-details-${transaction.id}`;
-                const description =
-                  transaction.merchant ?? transaction.payee ?? "transaction";
-                return (
-                  <Fragment key={transaction.id}>
-                    <tr>
-                      <td>{transaction.transactionDate.slice(0, 10)}</td>
-                      <td>{description}</td>
-                      <td>
-                        {accountNames.get(transaction.accountId) ?? "Unknown"}
-                      </td>
-                      <td>
-                        {categoryNames.get(transaction.categoryId ?? "") ??
-                          transaction.sourceCategory ??
-                          "Uncategorized"}
-                      </td>
-                      <td className="transaction-amount">
-                        {formatMinorUnits(transaction.amountMinor)}
-                      </td>
-                      <td className="transaction-action">
-                        <button
-                          aria-controls={detailId}
-                          aria-expanded={isExpanded}
-                          aria-label={`${isExpanded ? "Hide" : "Show"} details for ${description}`}
-                          onClick={() =>
-                            setSelectedId(
-                              isExpanded ? undefined : transaction.id,
-                            )
-                          }
-                          type="button"
+      {transactionItems?.length && (!contextIsPending || contextError) ? (
+        <>
+          <p className="transaction-result-summary">
+            {transactionItems.length} transactions loaded ·{" "}
+            {transactionItems.at(-1)?.transactionDate.slice(0, 10)} to{" "}
+            {transactionItems[0]?.transactionDate.slice(0, 10)}
+          </p>
+          <div className="transaction-table-wrap">
+            <table aria-label="Transactions" className="transaction-table">
+              <thead>
+                <tr>
+                  <th scope="col">Date</th>
+                  <th scope="col">Description</th>
+                  <th scope="col">Account</th>
+                  <th scope="col">Category</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Amount</th>
+                  <th scope="col">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {transactionItems.map((transaction) => {
+                  const isExpanded = selectedId === transaction.id;
+                  const detailId = `transaction-details-${transaction.id}`;
+                  const description =
+                    transaction.merchant ?? transaction.payee ?? "transaction";
+                  return (
+                    <Fragment key={transaction.id}>
+                      <tr>
+                        <td>{transaction.transactionDate.slice(0, 10)}</td>
+                        <td>{description}</td>
+                        <td
+                          aria-label={`${accountDetails.get(transaction.accountId)?.account.name ?? "Unknown account"}, ${accountDetails.get(transaction.accountId)?.institutionName ?? "Unknown institution"}`}
+                          className="account-cell"
                         >
-                          {isExpanded ? "Hide" : "Details"}
-                        </button>
-                      </td>
-                    </tr>
-                    {isExpanded ? (
-                      <tr className="transaction-detail-row">
-                        <td colSpan={6}>
-                          <section
-                            aria-labelledby={`${detailId}-heading`}
-                            className="transaction-details"
-                            id={detailId}
+                          <strong>
+                            {accountDetails.get(transaction.accountId)?.account
+                              .name ?? "Unknown account"}
+                          </strong>
+                          <span>
+                            {accountDetails.get(transaction.accountId)
+                              ?.institutionName ?? "Unknown institution"}
+                          </span>
+                        </td>
+                        <td>
+                          {categoryNames.get(transaction.categoryId ?? "") ??
+                            transaction.sourceCategory ??
+                            "Uncategorized"}
+                        </td>
+                        <td>
+                          <span
+                            className={`status-badge ${transaction.status}`}
                           >
-                            <h3 id={`${detailId}-heading`}>
-                              Transaction details
-                            </h3>
-                            {details.isPending ? (
-                              <p role="status">Loading transaction details…</p>
-                            ) : null}
-                            {details.isError ? (
-                              <p role="alert">{details.error.message}</p>
-                            ) : null}
-                            {details.data?.transaction.id === transaction.id ? (
-                              <>
-                                <dl className="transaction-detail-grid">
-                                  <dt>Amount</dt>
-                                  <dd className="transaction-amount">
-                                    {formatMinorUnits(
-                                      details.data.transaction.amountMinor,
-                                    )}
-                                  </dd>
-                                  <dt>Transaction date</dt>
-                                  <dd>
-                                    {details.data.transaction.transactionDate}
-                                  </dd>
-                                  <dt>Posted date</dt>
-                                  <dd>
-                                    {details.data.transaction.postedAt ?? "—"}
-                                  </dd>
-                                  <dt>Description</dt>
-                                  <dd>
-                                    {details.data.transaction.merchant ?? "—"}
-                                  </dd>
-                                  <dt>Payee</dt>
-                                  <dd>
-                                    {details.data.transaction.payee ?? "—"}
-                                  </dd>
-                                  <dt>Account</dt>
-                                  <dd>
-                                    {accountNames.get(
-                                      details.data.transaction.accountId,
-                                    ) ?? "Unknown"}
-                                  </dd>
-                                  <dt>Category</dt>
-                                  <dd>
-                                    {categoryNames.get(
-                                      details.data.transaction.categoryId ?? "",
-                                    ) ?? "Uncategorized"}
-                                  </dd>
-                                  <dt>Source category</dt>
-                                  <dd>
-                                    {details.data.transaction.sourceCategory ??
-                                      "—"}
-                                  </dd>
-                                  <dt>Status</dt>
-                                  <dd>{details.data.transaction.status}</dd>
-                                  <dt>Source identity</dt>
-                                  <dd>
-                                    {details.data.transaction.sourceIdentity}
-                                  </dd>
-                                  <dt>Source record ID</dt>
-                                  <dd>
-                                    {details.data.transaction.sourceRecordId}
-                                  </dd>
-                                  <dt>Current record</dt>
-                                  <dd>
-                                    {details.data.transaction.isCurrent
-                                      ? "Yes"
-                                      : "No"}
-                                  </dd>
-                                  <dt>Replaces transaction ID</dt>
-                                  <dd>
-                                    {details.data.transaction
-                                      .replacesTransactionId ?? "—"}
-                                  </dd>
-                                  <dt>Created</dt>
-                                  <dd>{details.data.transaction.createdAt}</dd>
-                                  <dt>Last updated</dt>
-                                  <dd>{details.data.transaction.updatedAt}</dd>
-                                </dl>
-                                {details.data.splits.length > 0 ? (
-                                  <section
-                                    aria-labelledby={`${detailId}-splits`}
-                                  >
-                                    <h4 id={`${detailId}-splits`}>Splits</h4>
-                                    <ul aria-label="Transaction splits">
-                                      {details.data.splits.map((split) => (
-                                        <li key={split.id}>
-                                          {formatMinorUnits(split.amountMinor)}{" "}
-                                          — {split.memo ?? "No memo"}
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </section>
-                                ) : null}
-                              </>
-                            ) : null}
-                          </section>
+                            {transaction.status}
+                          </span>
+                        </td>
+                        <td className="transaction-amount">
+                          {formatMinorUnits(transaction.amountMinor)}{" "}
+                          {transaction.currency}
+                        </td>
+                        <td className="transaction-action">
+                          <button
+                            aria-controls={detailId}
+                            aria-expanded={isExpanded}
+                            aria-label={`${isExpanded ? "Hide" : "Show"} details for ${description}`}
+                            onClick={() =>
+                              setSelectedId(
+                                isExpanded ? undefined : transaction.id,
+                              )
+                            }
+                            type="button"
+                          >
+                            {isExpanded ? "Hide" : "Details"}
+                          </button>
                         </td>
                       </tr>
-                    ) : null}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                      {isExpanded ? (
+                        <tr className="transaction-detail-row">
+                          <td colSpan={7}>
+                            <section
+                              aria-labelledby={`${detailId}-heading`}
+                              className="transaction-details"
+                              id={detailId}
+                            >
+                              <h3 id={`${detailId}-heading`}>
+                                Transaction details
+                              </h3>
+                              {details.isPending ? (
+                                <p role="status">
+                                  Loading transaction details…
+                                </p>
+                              ) : null}
+                              {details.isError ? (
+                                <p role="alert">{details.error.message}</p>
+                              ) : null}
+                              {details.data?.transaction.id ===
+                              transaction.id ? (
+                                <>
+                                  <dl className="transaction-detail-grid">
+                                    <dt>Amount</dt>
+                                    <dd className="transaction-amount">
+                                      {formatMinorUnits(
+                                        details.data.transaction.amountMinor,
+                                      )}{" "}
+                                      {details.data.transaction.currency}
+                                    </dd>
+                                    <dt>Transaction date</dt>
+                                    <dd>
+                                      {formatDateTime(
+                                        details.data.transaction
+                                          .transactionDate,
+                                      )}
+                                    </dd>
+                                    <dt>Posted date</dt>
+                                    <dd>
+                                      {formatDateTime(
+                                        details.data.transaction.postedAt,
+                                      )}
+                                    </dd>
+                                    <dt>Description</dt>
+                                    <dd>
+                                      {details.data.transaction.merchant ??
+                                        details.data.transaction.payee ??
+                                        "—"}
+                                    </dd>
+                                    <dt>Account</dt>
+                                    <dd>
+                                      {accountDetails.get(
+                                        details.data.transaction.accountId,
+                                      )
+                                        ? `${accountDetails.get(details.data.transaction.accountId)?.institutionName} — ${accountDetails.get(details.data.transaction.accountId)?.account.name}`
+                                        : "Unknown account"}
+                                    </dd>
+                                    <dt>Category</dt>
+                                    <dd>
+                                      {categoryNames.get(
+                                        details.data.transaction.categoryId ??
+                                          "",
+                                      ) ??
+                                        details.data.transaction
+                                          .sourceCategory ??
+                                        "Uncategorized"}
+                                    </dd>
+                                    <dt>Source category</dt>
+                                    <dd>
+                                      {details.data.transaction
+                                        .sourceCategory ?? "—"}
+                                    </dd>
+                                    <dt>Status</dt>
+                                    <dd>
+                                      <span
+                                        className={`status-badge ${details.data.transaction.status}`}
+                                      >
+                                        {details.data.transaction.status}
+                                      </span>
+                                    </dd>
+                                  </dl>
+                                  <details className="provenance-details">
+                                    <summary>Import provenance</summary>
+                                    <dl className="transaction-detail-grid">
+                                      <dt>Source identity</dt>
+                                      <dd>
+                                        {
+                                          details.data.transaction
+                                            .sourceIdentity
+                                        }
+                                      </dd>
+                                      <dt>Source record ID</dt>
+                                      <dd>
+                                        {
+                                          details.data.transaction
+                                            .sourceRecordId
+                                        }
+                                      </dd>
+                                      <dt>Current record</dt>
+                                      <dd>
+                                        {details.data.transaction.isCurrent
+                                          ? "Yes"
+                                          : "No"}
+                                      </dd>
+                                      <dt>Replaces transaction ID</dt>
+                                      <dd>
+                                        {details.data.transaction
+                                          .replacesTransactionId ?? "—"}
+                                      </dd>
+                                      <dt>Created</dt>
+                                      <dd>
+                                        {formatDateTime(
+                                          details.data.transaction.createdAt,
+                                        )}
+                                      </dd>
+                                      <dt>Last updated</dt>
+                                      <dd>
+                                        {formatDateTime(
+                                          details.data.transaction.updatedAt,
+                                        )}
+                                      </dd>
+                                    </dl>
+                                  </details>
+                                  {details.data.splits.length > 0 ? (
+                                    <section
+                                      aria-labelledby={`${detailId}-splits`}
+                                    >
+                                      <h4 id={`${detailId}-splits`}>Splits</h4>
+                                      <ul aria-label="Transaction splits">
+                                        {details.data.splits.map((split) => (
+                                          <li key={split.id}>
+                                            {formatMinorUnits(
+                                              split.amountMinor,
+                                            )}{" "}
+                                            — {split.memo ?? "No memo"}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </section>
+                                  ) : null}
+                                </>
+                              ) : null}
+                            </section>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       ) : null}
       {transactions.hasNextPage ? (
         <div className="transaction-pagination" ref={loadMoreRef}>
@@ -1147,6 +1337,9 @@ function Accounts(): React.JSX.Element {
     queryFn: getInstitutions,
     queryKey: ["institutions"],
   });
+  const institutionNames = new Map(
+    institutions.data?.map((institution) => [institution.id, institution.name]),
+  );
   const addInstitution = useMutation({
     mutationFn: () => createInstitution({ name: newInstitutionName }),
     onSuccess: async (institution) => {
@@ -1174,151 +1367,182 @@ function Accounts(): React.JSX.Element {
   return (
     <section aria-labelledby="accounts-heading" className="page">
       <h2 id="accounts-heading">Accounts</h2>
-      <section aria-labelledby="quick-institution-heading">
-        <h3 id="quick-institution-heading">Add an institution</h3>
+      <details className="manual-entry-panel">
+        <summary>Add an institution</summary>
+        <section aria-labelledby="quick-institution-heading">
+          <h3 id="quick-institution-heading">Add an institution</h3>
+          <form
+            className="stacked-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              addInstitution.mutate();
+            }}
+          >
+            <label htmlFor="quick-institution-name">Institution name</label>
+            <input
+              id="quick-institution-name"
+              onChange={(event) => setNewInstitutionName(event.target.value)}
+              required
+              value={newInstitutionName}
+            />
+            <button disabled={addInstitution.isPending} type="submit">
+              Add institution
+            </button>
+          </form>
+        </section>
+      </details>
+      <details className="manual-entry-panel">
+        <summary>Add an account</summary>
         <form
           className="stacked-form"
           onSubmit={(event) => {
             event.preventDefault();
-            addInstitution.mutate();
+            create.mutate(form);
           }}
         >
-          <label htmlFor="quick-institution-name">Institution name</label>
+          <label htmlFor="account-name">Account name</label>
           <input
-            id="quick-institution-name"
-            onChange={(event) => setNewInstitutionName(event.target.value)}
+            id="account-name"
+            onChange={(event) => setForm({ ...form, name: event.target.value })}
             required
-            value={newInstitutionName}
+            value={form.name}
           />
-          <button disabled={addInstitution.isPending} type="submit">
-            Add institution
+          <label htmlFor="account-institution">Institution</label>
+          <select
+            id="account-institution"
+            onChange={(event) =>
+              setForm({ ...form, institutionId: event.target.value })
+            }
+            required
+            value={form.institutionId}
+          >
+            <option value="">Select an institution</option>
+            {institutions.data?.map((institution) => (
+              <option key={institution.id} value={institution.id}>
+                {institution.name}
+              </option>
+            ))}
+          </select>
+          <label htmlFor="account-type">Account type</label>
+          <AccountTypeSelect
+            id="account-type"
+            onChange={(accountType) =>
+              setForm({
+                ...form,
+                accountType,
+              })
+            }
+            value={form.accountType}
+          />
+          <label htmlFor="account-currency">Currency</label>
+          <input
+            id="account-currency"
+            maxLength={3}
+            onChange={(event) =>
+              setForm({ ...form, currency: event.target.value.toUpperCase() })
+            }
+            pattern="[A-Z]{3}"
+            required
+            value={form.currency}
+          />
+          <button disabled={create.isPending} type="submit">
+            Add account
           </button>
         </form>
-      </section>
-      <form
-        className="stacked-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          create.mutate(form);
-        }}
-      >
-        <label htmlFor="account-name">Account name</label>
-        <input
-          id="account-name"
-          onChange={(event) => setForm({ ...form, name: event.target.value })}
-          required
-          value={form.name}
-        />
-        <label htmlFor="account-institution">Institution</label>
-        <select
-          id="account-institution"
-          onChange={(event) =>
-            setForm({ ...form, institutionId: event.target.value })
-          }
-          required
-          value={form.institutionId}
+      </details>
+      <details className="manual-entry-panel">
+        <summary>Record a dated balance</summary>
+        <form
+          className="stacked-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            addBalance.mutate();
+          }}
         >
-          <option value="">Select an institution</option>
-          {institutions.data?.map((institution) => (
-            <option key={institution.id} value={institution.id}>
-              {institution.name}
-            </option>
-          ))}
-        </select>
-        <label htmlFor="account-type">Account type</label>
-        <AccountTypeSelect
-          id="account-type"
-          onChange={(accountType) =>
-            setForm({
-              ...form,
-              accountType,
-            })
-          }
-          value={form.accountType}
-        />
-        <label htmlFor="account-currency">Currency</label>
-        <input
-          id="account-currency"
-          maxLength={3}
-          onChange={(event) =>
-            setForm({ ...form, currency: event.target.value.toUpperCase() })
-          }
-          pattern="[A-Z]{3}"
-          required
-          value={form.currency}
-        />
-        <button disabled={create.isPending} type="submit">
-          Add account
-        </button>
-      </form>
-      <form
-        className="stacked-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          addBalance.mutate();
-        }}
-      >
-        <h3>Record a dated balance</h3>
-        <label htmlFor="manual-balance-account">Account</label>
-        <select
-          id="manual-balance-account"
-          onChange={(event) => setBalanceAccountId(event.target.value)}
-          required
-          value={balanceAccountId}
-        >
-          <option value="">Select an account</option>
-          {accounts.data?.map((account) => (
-            <option key={account.id} value={account.id}>
-              {account.name}
-            </option>
-          ))}
-        </select>
-        <label htmlFor="manual-balance-amount">
-          Balance (
-          {accounts.data?.find((account) => account.id === balanceAccountId)
-            ?.currency ?? "currency"}
-          )
-        </label>
-        <input
-          id="manual-balance-amount"
-          onChange={(event) => setBalanceAmountMinor(event.target.value)}
-          required
-          inputMode="decimal"
-          placeholder="0.00"
-          step="0.01"
-          type="number"
-          value={balanceAmountMinor}
-        />
-        <label htmlFor="manual-balance-as-of">As of</label>
-        <input
-          id="manual-balance-as-of"
-          onChange={(event) => setBalanceAsOf(event.target.value)}
-          required
-          type="datetime-local"
-          value={balanceAsOf}
-        />
-        <button disabled={addBalance.isPending} type="submit">
-          Record balance
-        </button>
-        {addBalance.isError ? (
-          <p role="alert">{addBalance.error.message}</p>
-        ) : null}
-      </form>
+          <h3>Record a dated balance</h3>
+          <label htmlFor="manual-balance-account">Account</label>
+          <select
+            id="manual-balance-account"
+            onChange={(event) => setBalanceAccountId(event.target.value)}
+            required
+            value={balanceAccountId}
+          >
+            <option value="">Select an account</option>
+            {accounts.data?.map((account) => (
+              <option key={account.id} value={account.id}>
+                {accountDisplayName(account, institutionNames)}
+              </option>
+            ))}
+          </select>
+          <label htmlFor="manual-balance-amount">
+            Balance (
+            {accounts.data?.find((account) => account.id === balanceAccountId)
+              ?.currency ?? "currency"}
+            )
+          </label>
+          <input
+            id="manual-balance-amount"
+            onChange={(event) => setBalanceAmountMinor(event.target.value)}
+            required
+            inputMode="decimal"
+            placeholder="0.00"
+            step="0.01"
+            type="number"
+            value={balanceAmountMinor}
+          />
+          <label htmlFor="manual-balance-as-of">As of</label>
+          <input
+            id="manual-balance-as-of"
+            onChange={(event) => setBalanceAsOf(event.target.value)}
+            required
+            type="datetime-local"
+            value={balanceAsOf}
+          />
+          <button disabled={addBalance.isPending} type="submit">
+            Record balance
+          </button>
+          {addBalance.isError ? (
+            <p role="alert">{addBalance.error.message}</p>
+          ) : null}
+        </form>
+      </details>
       {create.isError ? <p role="alert">{create.error.message}</p> : null}
       {accounts.isPending ? <p role="status">Loading accounts…</p> : null}
       {accounts.isError ? <p role="alert">{accounts.error.message}</p> : null}
       {accounts.data?.length === 0 ? <p>No accounts yet.</p> : null}
-      <ul aria-label="Accounts" className="data-list">
-        {accounts.data?.map((account) => (
-          <li key={account.id}>
-            {account.name} — {account.accountType.replaceAll("_", " ")} (
-            {account.currency}) ·{" "}
-            {institutions.data?.find(
-              (institution) => institution.id === account.institutionId,
-            )?.name ?? "Unknown institution"}
-          </li>
-        ))}
-      </ul>
+      {accounts.data?.length ? (
+        <div className="data-table-wrap">
+          <table aria-label="Accounts" className="data-table">
+            <thead>
+              <tr>
+                <th scope="col">Account</th>
+                <th scope="col">Institution</th>
+                <th scope="col">Type</th>
+                <th scope="col">Status</th>
+                <th scope="col">Currency</th>
+              </tr>
+            </thead>
+            <tbody>
+              {accounts.data.map((account) => (
+                <tr key={account.id}>
+                  <td>{account.name}</td>
+                  <td>
+                    {institutionNames.get(account.institutionId) ??
+                      "Unknown institution"}
+                  </td>
+                  <td>{account.accountType.replaceAll("_", " ")}</td>
+                  <td>
+                    <span className={`status-badge ${account.status}`}>
+                      {account.status}
+                    </span>
+                  </td>
+                  <td>{account.currency}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -1425,6 +1649,133 @@ function Institutions(): React.JSX.Element {
           <InstitutionEditor institution={institution} key={institution.id} />
         ))}
       </ul>
+    </section>
+  );
+}
+
+function SimpleFinSyncPanel(
+  props: Readonly<{ provider: ProviderConnection }>,
+): React.JSX.Element {
+  const queryClient = useQueryClient();
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const health = useQuery({
+    enabled: props.provider.provider === "simplefin",
+    queryFn: () => getSimpleFinSyncHealth(props.provider.id),
+    queryKey: ["simplefin-sync-health", props.provider.id],
+  });
+  const sync = useMutation({
+    mutationFn: (mode: "deep" | "initial" | "rolling") =>
+      syncSimpleFin(props.provider.id, {
+        ...(endDate ? { endDate } : {}),
+        mode,
+        ...(startDate ? { startDate } : {}),
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["accounts"] }),
+        queryClient.invalidateQueries({ queryKey: ["transactions"] }),
+        queryClient.invalidateQueries({ queryKey: ["institutions"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["external-institution-connections"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["account-import-reviews"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["simplefin-sync-health", props.provider.id],
+        }),
+      ]);
+    },
+  });
+  if (props.provider.provider !== "simplefin") return <></>;
+  const lastRun = health.data?.lastRun;
+  return (
+    <section aria-label="SimpleFIN sync health" className="sync-health">
+      <h4>Sync health</h4>
+      {health.isPending ? <p role="status">Loading sync health…</p> : null}
+      {health.isError ? <p role="alert">{health.error.message}</p> : null}
+      {health.data ? (
+        <>
+          <p>
+            Last successful sync: {health.data.lastSuccessAt ?? "Never"}
+            {health.data.coverageStart && health.data.coverageEnd
+              ? ` · Coverage ${health.data.coverageStart}–${health.data.coverageEnd}`
+              : ""}
+          </p>
+          {lastRun ? (
+            <p>
+              Latest {lastRun.mode} sync: {lastRun.status} ·{" "}
+              {lastRun.accountsAffected} accounts · {lastRun.transactionsAdded}{" "}
+              added · {lastRun.transactionsUpdated} updated ·{" "}
+              {lastRun.transactionsUnchanged} unchanged ·{" "}
+              {lastRun.balancesUpdated} balances refreshed
+            </p>
+          ) : (
+            <p>No sync has run yet.</p>
+          )}
+          {lastRun?.errors.length ? (
+            <ul aria-label="Latest SimpleFIN sync errors">
+              {lastRun.errors.map((error, index) => (
+                <li key={`${error.code}-${index}`}>
+                  {error.code}: {error.message}
+                  {error.accountId ? ` (account ${error.accountId})` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      ) : null}
+      <div className="form-grid">
+        <label htmlFor={`sync-start-${props.provider.id}`}>
+          Start date (optional)
+        </label>
+        <input
+          id={`sync-start-${props.provider.id}`}
+          onChange={(event) => setStartDate(event.target.value)}
+          type="date"
+          value={startDate}
+        />
+        <label htmlFor={`sync-end-${props.provider.id}`}>
+          End date (optional)
+        </label>
+        <input
+          id={`sync-end-${props.provider.id}`}
+          onChange={(event) => setEndDate(event.target.value)}
+          type="date"
+          value={endDate}
+        />
+      </div>
+      <div className="button-row">
+        <button
+          disabled={sync.isPending || props.provider.status !== "connected"}
+          onClick={() => sync.mutate("initial")}
+          type="button"
+        >
+          Initial sync (90 days)
+        </button>
+        <button
+          disabled={sync.isPending || props.provider.status !== "connected"}
+          onClick={() => sync.mutate("rolling")}
+          type="button"
+        >
+          Refresh (60 days)
+        </button>
+        <button
+          disabled={sync.isPending || props.provider.status !== "connected"}
+          onClick={() => sync.mutate("deep")}
+          type="button"
+        >
+          Deep sync (2 years)
+        </button>
+      </div>
+      {sync.isPending ? <p role="status">Syncing SimpleFIN…</p> : null}
+      {sync.isError ? <p role="alert">{sync.error.message}</p> : null}
+      {sync.isSuccess ? (
+        <p role="status">
+          SimpleFIN sync finished with status {sync.data.status}.
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -1541,6 +1892,7 @@ function Connections(): React.JSX.Element {
             >
               Disconnect
             </button>
+            <SimpleFinSyncPanel provider={provider} />
           </li>
         ))}
       </ul>
@@ -1640,6 +1992,90 @@ function ImportReviews(): React.JSX.Element {
   );
 }
 
+type OverviewAccount = FinancialState["accountBreakdown"][number];
+
+const overviewAccountGroupDefinitions: readonly Readonly<{
+  label: string;
+  types: readonly Account["accountType"][];
+}>[] = [
+  {
+    label: "Cash available",
+    types: ["cash", "checking", "savings", "money_market"],
+  },
+  { label: "Certificates", types: ["certificate_of_deposit"] },
+  { label: "Credit cards", types: ["credit_card"] },
+  {
+    label: "Loans and debt",
+    types: [
+      "mortgage",
+      "auto_loan",
+      "student_loan",
+      "personal_loan",
+      "other_loan",
+    ],
+  },
+  { label: "Investments", types: ["taxable_brokerage"] },
+  {
+    label: "Retirement",
+    types: [
+      "traditional_ira",
+      "roth_ira",
+      "traditional_sep_ira",
+      "roth_sep_ira",
+      "traditional_simple_ira",
+      "roth_simple_ira",
+      "traditional_401k",
+      "roth_401k",
+      "mixed_401k",
+      "traditional_403b",
+      "roth_403b",
+      "mixed_403b",
+      "traditional_457b",
+      "roth_457b",
+      "mixed_457b",
+      "pension",
+      "other_retirement",
+    ],
+  },
+  { label: "Health and education", types: ["hsa", "529"] },
+  { label: "Other and needs review", types: ["other", "unclassified"] },
+];
+
+const accountTypeLabels = new Map(
+  accountTypeGroups.flatMap((group) =>
+    group.options.map((option) => [option.value, option.label] as const),
+  ),
+);
+
+function groupedOverviewAccounts(
+  accounts: readonly OverviewAccount[],
+): readonly Readonly<{
+  accounts: readonly OverviewAccount[];
+  label: string;
+  totalMinor: number;
+}>[] {
+  return overviewAccountGroupDefinitions.flatMap((definition) => {
+    const grouped = accounts
+      .filter((account) => definition.types.includes(account.accountType))
+      .sort(
+        (left, right) =>
+          left.institutionName.localeCompare(right.institutionName) ||
+          left.accountName.localeCompare(right.accountName),
+      );
+    if (grouped.length === 0) return [];
+    return [
+      {
+        accounts: grouped,
+        label: definition.label,
+        totalMinor: grouped.reduce(
+          (total, account) => total + (account.balanceMinor ?? 0),
+          0,
+        ),
+      },
+    ];
+  });
+}
+
 function Overview(): React.JSX.Element {
   const health = useQuery({
     queryFn: getHealth,
@@ -1650,6 +2086,14 @@ function Overview(): React.JSX.Element {
     queryFn: () => getFinancialState(),
     queryKey: ["financial-state", "USD"],
   });
+  const accountGroups = financialState.data
+    ? groupedOverviewAccounts(financialState.data.accountBreakdown)
+    : [];
+  const investedAccountBalanceMinor = accountGroups
+    .filter(
+      (group) => group.label === "Investments" || group.label === "Retirement",
+    )
+    .reduce((total, group) => total + group.totalMinor, 0);
   return (
     <section aria-labelledby="overview-heading" className="page">
       <h2 id="overview-heading">Workspace overview</h2>
@@ -1671,9 +2115,12 @@ function Overview(): React.JSX.Element {
               <dd>
                 {formatMinorUnits(financialState.data.spendableFundsMinor)}
               </dd>
-              <dt>Investments</dt>
+              <dt>Investment and retirement balances</dt>
               <dd>
-                {formatMinorUnits(financialState.data.investmentValueMinor)}
+                {formatCurrencyMinorUnits(
+                  investedAccountBalanceMinor,
+                  financialState.data.currency,
+                )}
               </dd>
               <dt>Liabilities</dt>
               <dd>
@@ -1686,6 +2133,90 @@ function Overview(): React.JSX.Element {
               As of {financialState.data.asOf}. CDs and investments are excluded
               from spendable funds.
             </p>
+            <section
+              aria-labelledby="account-balances-heading"
+              className="overview-accounts"
+            >
+              <h3 id="account-balances-heading">Accounts and balances</h3>
+              <p>
+                Current balances are grouped by purpose. Available balance is
+                shown separately when the institution provides it.
+              </p>
+              {financialState.data.accountBreakdown.length === 0 ? (
+                <p>No account balances are available yet.</p>
+              ) : (
+                accountGroups.map((group) => (
+                  <details
+                    className="account-balance-group"
+                    key={group.label}
+                    open
+                  >
+                    <summary>
+                      <span>{group.label}</span>
+                      <strong>
+                        {formatCurrencyMinorUnits(
+                          group.totalMinor,
+                          financialState.data.currency,
+                        )}
+                      </strong>
+                    </summary>
+                    <div className="data-table-wrap">
+                      <table
+                        aria-label={`${group.label} accounts`}
+                        className="data-table overview-account-table"
+                      >
+                        <thead>
+                          <tr>
+                            <th scope="col">Account</th>
+                            <th scope="col">Institution</th>
+                            <th scope="col">Type</th>
+                            <th scope="col">Balance</th>
+                            <th scope="col">Available</th>
+                            <th scope="col">Balance date</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.accounts.map((account) => (
+                            <tr key={account.accountId}>
+                              <td>
+                                <strong>{account.accountName}</strong>
+                                {account.status !== "active" ? (
+                                  <span className="account-status-note">
+                                    {account.status}
+                                  </span>
+                                ) : null}
+                              </td>
+                              <td>{account.institutionName}</td>
+                              <td>
+                                {accountTypeLabels.get(account.accountType) ??
+                                  account.accountType.replaceAll("_", " ")}
+                              </td>
+                              <td className="overview-account-amount">
+                                {account.balanceMinor === null
+                                  ? "Not available"
+                                  : formatCurrencyMinorUnits(
+                                      account.balanceMinor,
+                                      account.currency,
+                                    )}
+                              </td>
+                              <td className="overview-account-amount">
+                                {account.availableAmountMinor === null
+                                  ? "—"
+                                  : formatCurrencyMinorUnits(
+                                      account.availableAmountMinor,
+                                      account.currency,
+                                    )}
+                              </td>
+                              <td>{formatDateTime(account.balanceAsOf)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                ))
+              )}
+            </section>
             {financialState.data.warnings.length > 0 ? (
               <ul aria-label="Financial-state warnings">
                 {financialState.data.warnings.map((warning) => (

@@ -61,6 +61,11 @@ import {
   providerConnectionListSchema,
   providerConnectionSchema,
   type SimpleFinConnectRequest,
+  simpleFinSyncHealthSchema,
+  simpleFinSyncRunSchema,
+  type SimpleFinSyncHealth,
+  type SimpleFinSyncRequest,
+  type SimpleFinSyncRun,
   transactionListSchema,
   transactionDetailsSchema,
   manualTransactionInputSchema,
@@ -88,6 +93,8 @@ export type {
   ExternalInstitutionConnection,
   Institution,
   ProviderConnection,
+  SimpleFinSyncHealth,
+  SimpleFinSyncRun,
   Transaction,
   TransactionDetails,
   ManualTransactionInput,
@@ -245,6 +252,26 @@ export async function connectSimpleFin(
   );
 }
 
+export async function syncSimpleFin(
+  connectionId: string,
+  input: SimpleFinSyncRequest,
+): Promise<SimpleFinSyncRun> {
+  return simpleFinSyncRunSchema.parse(
+    await requestJson(`/api/simplefin/connections/${connectionId}/sync`, {
+      body: JSON.stringify(input),
+      method: "POST",
+    }),
+  );
+}
+
+export async function getSimpleFinSyncHealth(
+  connectionId: string,
+): Promise<SimpleFinSyncHealth> {
+  return simpleFinSyncHealthSchema.parse(
+    await requestJson(`/api/simplefin/connections/${connectionId}/sync-health`),
+  );
+}
+
 export async function getExternalInstitutionConnections(): Promise<
   readonly ExternalInstitutionConnection[]
 > {
@@ -335,10 +362,18 @@ export async function updateCsvMapping(
 
 export async function getTransactions(
   cursor?: string,
+  filter: Readonly<{
+    accountId?: string;
+    status?: Transaction["status"];
+  }> = {},
 ): Promise<TransactionPage> {
-  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+  const query = new URLSearchParams();
+  if (cursor) query.set("cursor", cursor);
+  if (filter.accountId) query.set("accountId", filter.accountId);
+  if (filter.status) query.set("status", filter.status);
+  const suffix = query.size > 0 ? `?${query}` : "";
   return transactionListSchema.parse(
-    await requestJson(`/api/transactions${query}`),
+    await requestJson(`/api/transactions${suffix}`),
   );
 }
 

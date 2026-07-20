@@ -66,3 +66,76 @@ test("rejects access URLs that are insecure or lack Basic Auth credentials", asy
     kind: "invalid_response",
   });
 });
+
+test("fetches version 2 accounts with Basic Auth and normalizes structured data", async () => {
+  const request = vi.fn().mockResolvedValue(
+    Response.json({
+      accounts: [
+        {
+          "available-balance": "42.00",
+          balance: "50.00",
+          "balance-date": 1_752_883_200,
+          conn_id: "connection-1",
+          currency: "USD",
+          id: "account-1",
+          name: "Checking",
+          transactions: [
+            {
+              amount: "-8.00",
+              description: "Coffee",
+              extra: { category: "Dining" },
+              id: "transaction-1",
+              pending: true,
+              posted: 0,
+              transacted_at: 1_752_883_200,
+            },
+          ],
+        },
+      ],
+      connections: [
+        {
+          conn_id: "connection-1",
+          name: "Example Bank login",
+          org_id: "institution-1",
+          org_name: "Example Bank",
+          org_url: "https://example.test",
+        },
+      ],
+      errlist: [
+        {
+          code: "act.missingdata",
+          msg: "Some history is not available.\u0000",
+          account_id: "account-1",
+        },
+      ],
+    }),
+  );
+  const client = new HttpSimpleFinClient(request);
+
+  const result = await client.fetchAccounts(
+    "https://simplefin-user:simplefin-password@bridge.example/simplefin",
+    { endDate: 200, includePending: true, startDate: 100 },
+  );
+
+  expect(result).toMatchObject({
+    accounts: [
+      {
+        availableBalance: "42.00",
+        connectionId: "connection-1",
+        transactions: [{ pending: true }],
+      },
+    ],
+    connections: [{ organizationName: "Example Bank" }],
+    errors: [
+      { code: "act.missingdata", message: "Some history is not available." },
+    ],
+  });
+  const [url, init] = request.mock.calls[0] as [URL, RequestInit];
+  expect(url.href).toBe(
+    "https://bridge.example/simplefin/accounts?version=2&start-date=100&end-date=200&pending=1",
+  );
+  expect(url.href).not.toContain("simplefin-password");
+  expect(init.headers).toEqual({
+    authorization: `Basic ${Buffer.from("simplefin-user:simplefin-password").toString("base64")}`,
+  });
+});
