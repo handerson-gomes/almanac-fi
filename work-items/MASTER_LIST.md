@@ -11,7 +11,7 @@ This is the dependency-ordered implementation backlog for Almanac FI. Each item 
 - Current funds, forecast income, and allocated future cash must remain distinct.
 - Never bypass the shared forecast and allocation ledger for future cash-flow commitments.
 - Budgets are recurring envelopes; goals are accumulating targets; both use typed funding rules and the shared ledger.
-- AI, planner extensions, MCP, and external integrations are deferred until work items 024 and 032–038 are complete.
+- AI, planner extensions, MCP, and external integrations are deferred until work items 024 and 032–038a are complete.
 - Telemetry defaults to metadata-only; secret and financial-content handling must be tested.
 
 ## Status legend
@@ -44,7 +44,7 @@ This is the dependency-ordered implementation backlog for Almanac FI. Each item 
 | 014 | [Telemetry foundation and privacy policy](./014-telemetry-foundation-and-privacy/requirements.md) | Complete    | 003, 004, 009           |
 | 015 | [Development SecretStore](./015-developer-secret-store/requirements.md)                           | Complete    | 003, 007                |
 
-### Financial data and shared planning substrate (016–038)
+### Financial data and shared planning substrate (016–038a)
 
 | ID   | Work item                                                                                                                     | Status      | Depends on                         |
 | ---- | ----------------------------------------------------------------------------------------------------------------------------- | ----------- | ---------------------------------- |
@@ -74,8 +74,9 @@ This is the dependency-ordered implementation backlog for Almanac FI. Each item 
 | 034  | [Monthly income forecast and actual-income reconciliation](./034-monthly-income-forecast-and-reconciliation/requirements.md)   | Completed   | 017, 025, 026, 032, 033            |
 | 035  | [Funding buckets and allocation rules](./035-funding-buckets-and-allocation-rules/requirements.md)                             | Completed   | 004, 006, 007, 008, 028, 028a, 028b, 030, 033 |
 | 036  | [Shared allocation ledger and constraint engine](./036-allocation-ledger-and-constraint-engine/requirements.md)                | Completed   | 005, 006, 007, 032, 034, 035       |
-| 037  | [Active plan versioning and hypothetical scenarios](./037-plan-versioning-and-scenarios/requirements.md)                       | Not started | 006, 007, 008, 034, 035, 036       |
-| 038  | [Core planning dashboard and planned-versus-actual reconciliation](./038-core-planning-dashboard-and-reconciliation/requirements.md) | Not started | 010, 031, 032, 034, 036, 037       |
+| 037  | [Active plan versioning and hypothetical scenarios](./037-plan-versioning-and-scenarios/requirements.md)                       | Complete    | 006, 007, 008, 034, 035, 036       |
+| 038  | [Core planning dashboard and planned-versus-actual reconciliation](./038-core-planning-dashboard-and-reconciliation/requirements.md) | Complete    | 010, 031, 032, 034, 036, 037       |
+| 038a | [Dashboard UI overhaul and forecast visualization](./038a-dashboard-ui-overhaul-and-forecast-visualization/requirements.md)      | Not started | 023a, 031, 032, 034, 036, 037, 038 |
 
 ### Deferred AI platform (039–050)
 
@@ -127,7 +128,7 @@ The active financial-core dependency path is:
 - `024 → 032`
 - `027 → 033 → 035`
 - `032 + 033 → 034`
-- `032 + 034 + 035 → 036 → 037 → 038`
+- `032 + 034 + 035 → 036 → 037 → 038 → 038a`
 
 Work items 039–059 and 061 are explicitly deferred. They are not prerequisites for the active core path and must not introduce parallel forecast, allocation, or financial-state models when resumed.
 
